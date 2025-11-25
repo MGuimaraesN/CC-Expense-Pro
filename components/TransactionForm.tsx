@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus } from 'lucide-react';
-import { TransactionType, Currency, CreditCard, Transaction, RecurrenceFrequency } from '../types';
-import { createTransaction, updateTransaction } from '../services/transactionService';
+import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus, CalendarOff } from 'lucide-react';
+import { TransactionType, Currency, CreditCard, Transaction, RecurrenceFrequency, TransactionStatus } from '../types';
+import { useCreateTransaction, useUpdateTransaction } from '../hooks/useTransactions';
 
 interface TransactionFormProps {
   onClose: () => void;
@@ -20,9 +20,11 @@ const transactionSchema = z.object({
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date"),
   category: z.string().min(2, "Category is required"),
   type: z.nativeEnum(TransactionType),
+  status: z.nativeEnum(TransactionStatus),
   cardId: z.string().optional(),
   isRecurring: z.boolean(),
   recurrenceFrequency: z.nativeEnum(RecurrenceFrequency).optional(),
+  recurrenceEndDate: z.string().optional(),
   isInstallment: z.boolean(),
   totalInstallments: z.number().min(1).max(24).optional(),
 });
@@ -30,9 +32,14 @@ const transactionSchema = z.object({
 type TransactionFormData = z.infer<typeof transactionSchema>;
 
 export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuccess, cards, initialData }) => {
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+
+  // React Query Mutations
+  const createMutation = useCreateTransaction();
+  const updateMutation = useUpdateTransaction();
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   const { register, handleSubmit, watch, formState: { errors }, reset, setValue } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
@@ -43,10 +50,12 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
       isRecurring: false,
       recurrenceFrequency: RecurrenceFrequency.MONTHLY,
       type: TransactionType.EXPENSE,
+      status: TransactionStatus.PENDING,
     }
   });
 
   const watchType = watch('type');
+  const watchStatus = watch('status');
   const isInstallment = watch('isInstallment');
   const isRecurring = watch('isRecurring');
   const isEditing = !!initialData;
@@ -60,15 +69,28 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
         date: initialData.date.split('T')[0],
         category: initialData.category,
         type: initialData.type,
+        status: initialData.status || TransactionStatus.PENDING,
         cardId: initialData.cardId || '',
         isRecurring: initialData.isRecurring,
         recurrenceFrequency: initialData.recurrenceFrequency || RecurrenceFrequency.MONTHLY,
+        recurrenceEndDate: initialData.recurrenceEndDate ? initialData.recurrenceEndDate.split('T')[0] : undefined,
         isInstallment: initialData.isInstallment,
         totalInstallments: initialData.totalInstallments || 1,
       });
       setTags(initialData.tags || []);
     }
   }, [initialData, reset]);
+
+  // Auto-set status defaults when type changes (if not editing)
+  useEffect(() => {
+    if (!isEditing) {
+      if (watchType === TransactionType.INCOME) {
+        setValue('status', TransactionStatus.PAID);
+      } else {
+        setValue('status', TransactionStatus.PENDING);
+      }
+    }
+  }, [watchType, setValue, isEditing]);
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -86,7 +108,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
   };
 
   const onSubmit = async (data: TransactionFormData) => {
-    setIsSubmitting(true);
     try {
       const payload = {
         ...data,
@@ -95,19 +116,19 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
         totalInstallments: Number(data.totalInstallments),
         currency: Currency.BRL,
         tags: tags,
+        recurrenceEndDate: data.recurrenceEndDate ? new Date(data.recurrenceEndDate).toISOString() : undefined,
       };
 
       if (isEditing && initialData) {
-        await updateTransaction({ ...initialData, ...payload });
+        await updateMutation.mutateAsync({ ...initialData, ...payload });
       } else {
-        await createTransaction(payload);
+        await createMutation.mutateAsync(payload);
       }
       onSuccess();
       onClose();
     } catch (error) {
-      console.error(error);
-    } finally {
-      setIsSubmitting(false);
+      console.error("Failed to save transaction", error);
+      // Error handling is managed by the hook callbacks in App.tsx/TransactionsView
     }
   };
 
@@ -127,22 +148,41 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 overflow-y-auto space-y-6">
           
-          {/* Type Selector */}
-          <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-            <button
-              type="button"
-              onClick={() => setValue('type', TransactionType.EXPENSE)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${watchType === TransactionType.EXPENSE ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-            >
-              <ArrowDownCircle size={16} /> Expense
-            </button>
-            <button
-              type="button"
-              onClick={() => setValue('type', TransactionType.INCOME)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${watchType === TransactionType.INCOME ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-            >
-              <ArrowUpCircle size={16} /> Income
-            </button>
+          {/* Top Row: Type and Status */}
+          <div className="flex gap-4">
+            {/* Type Selector */}
+            <div className="flex-1 flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setValue('type', TransactionType.EXPENSE)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${watchType === TransactionType.EXPENSE ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+              >
+                <ArrowDownCircle size={16} /> Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => setValue('type', TransactionType.INCOME)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all ${watchType === TransactionType.INCOME ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+              >
+                <ArrowUpCircle size={16} /> Income
+              </button>
+            </div>
+            
+            {/* Status Toggle */}
+            <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg px-3">
+               <label className="flex items-center gap-2 cursor-pointer">
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Paid?</span>
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${watchStatus === TransactionStatus.PAID ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <input 
+                      type="checkbox" 
+                      className="sr-only"
+                      checked={watchStatus === TransactionStatus.PAID}
+                      onChange={(e) => setValue('status', e.target.checked ? TransactionStatus.PAID : TransactionStatus.PENDING)}
+                    />
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${watchStatus === TransactionStatus.PAID ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+               </label>
+            </div>
           </div>
 
           {/* Amount */}
@@ -254,14 +294,25 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
                 </label>
               </div>
               {isRecurring && (
-                <select
-                  {...register('recurrenceFrequency')}
-                  className="w-full mt-2 text-xs p-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
-                >
-                  <option value={RecurrenceFrequency.WEEKLY}>Weekly</option>
-                  <option value={RecurrenceFrequency.MONTHLY}>Monthly</option>
-                  <option value={RecurrenceFrequency.YEARLY}>Yearly</option>
-                </select>
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <select
+                    {...register('recurrenceFrequency')}
+                    className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                  >
+                    <option value={RecurrenceFrequency.WEEKLY}>Weekly</option>
+                    <option value={RecurrenceFrequency.MONTHLY}>Monthly</option>
+                    <option value={RecurrenceFrequency.YEARLY}>Yearly</option>
+                  </select>
+                  <div className="relative">
+                    <label className="text-[10px] text-slate-500 uppercase font-semibold mb-1 block">End Date (Optional)</label>
+                    <CalendarOff className="absolute left-2 top-[22px] text-slate-400" size={12} />
+                    <input 
+                      type="date"
+                      {...register('recurrenceEndDate')}
+                      className="w-full pl-6 pr-2 py-1 text-xs rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
               )}
             </div>
 

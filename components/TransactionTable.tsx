@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Transaction, Currency, CreditCard, TransactionType } from '../types';
+import { Transaction, Currency, CreditCard, TransactionType, TransactionStatus } from '../types';
 import { Skeleton } from './ui/Skeleton';
-import { Calendar, Repeat, Layers, Trash2, AlertTriangle, PlusCircle, Edit2, ArrowUpDown, ArrowUp, ArrowDown, Tag, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { Calendar, Repeat, Layers, Trash2, AlertTriangle, PlusCircle, Edit2, ArrowUpDown, ArrowUp, ArrowDown, Tag, ArrowUpCircle, ArrowDownCircle, CheckCircle, Clock } from 'lucide-react';
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -9,13 +9,14 @@ interface TransactionTableProps {
   cards: CreditCard[];
   onDelete?: (id: string) => void;
   onEdit?: (transaction: Transaction) => void;
+  onStatusToggle?: (transaction: Transaction) => void;
   isDeleting?: boolean;
 }
 
 type SortKey = 'date' | 'amount' | 'description';
 type SortDirection = 'asc' | 'desc';
 
-export const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, loading, cards, onDelete, onEdit, isDeleting }) => {
+export const TransactionTable: React.FC<TransactionTableProps> = ({ transactions, loading, cards, onDelete, onEdit, onStatusToggle, isDeleting }) => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
 
@@ -122,6 +123,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ transactions
             <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 text-xs uppercase font-medium">
               <tr>
                 <th className="px-6 py-4 w-12 text-center">Type</th>
+                <th className="px-6 py-4 w-24">Status</th>
                 <th 
                   className="px-6 py-4 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                   onClick={() => handleSort('date')}
@@ -158,6 +160,27 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ transactions
                          <ArrowDownCircle size={16} />
                        </div>
                      )}
+                  </td>
+                  <td className="px-6 py-4">
+                     <button
+                        onClick={() => onStatusToggle && onStatusToggle(t)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all active:scale-95 ${
+                          t.status === TransactionStatus.PAID
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30'
+                            : 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                        }`}
+                        title="Click to toggle status"
+                     >
+                       {t.status === TransactionStatus.PAID ? (
+                         <>
+                           <CheckCircle size={12} /> Paid
+                         </>
+                       ) : (
+                         <>
+                           <Clock size={12} /> Pending
+                         </>
+                       )}
+                     </button>
                   </td>
                   <td className="px-6 py-4">
                      <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 text-sm">

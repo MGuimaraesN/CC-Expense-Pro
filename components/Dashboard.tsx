@@ -60,7 +60,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, isLoading }) => {
           title="Available Limit" 
           value={formatCurrency((stats?.totalLimit || 0) - (stats?.usedLimit || 0))} 
           icon={<AlertCircle size={20} />} 
-          subtext={`${((stats?.usedLimit || 0) / (stats?.totalLimit || 1)) * 100}% utilized`}
+          subtext={`${((stats?.usedLimit || 0) / (stats?.totalLimit || 1) * 100).toFixed(0)}% utilized`}
           loading={isLoading}
         />
         <StatCard 
@@ -72,38 +72,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, isLoading }) => {
         />
       </div>
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 h-[400px]">
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 h-[400px] flex flex-col relative">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Expense Trend (6 Months)</h3>
         {isLoading ? (
           <Skeleton className="w-full h-full" />
         ) : (
-          <ResponsiveContainer width="100%" height="85%">
-            <AreaChart data={stats?.monthlyTrend}>
-              <defs>
-                <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-slate-700" />
-              <XAxis 
-                dataKey="month" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#64748b' }} 
-              />
-              <YAxis 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#64748b' }} 
-                tickFormatter={(value) => `R$${value/1000}k`}
-              />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-              />
-              <Area type="monotone" dataKey="amount" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          /* 
+             Fix for Recharts "width (-1)" error: 
+             Use an absolute positioned child inside a relative flex-1 container 
+             to force strict dimensions.
+          */
+          <div className="flex-1 w-full min-h-0 relative">
+            <div className="absolute inset-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats?.monthlyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-slate-700" />
+                  <XAxis 
+                    dataKey="month" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#64748b' }} 
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#64748b' }} 
+                    tickFormatter={(value) => `R$${value/1000}k`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                  />
+                  <Area type="monotone" dataKey="amount" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorAmount)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
       </div>
     </div>

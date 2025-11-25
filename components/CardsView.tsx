@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CreditCard } from '../types';
 import { Skeleton } from './ui/Skeleton';
-import { Plus, Wifi } from 'lucide-react';
+import { Plus, Wifi, Edit2 } from 'lucide-react';
+import { CardForm } from './CardForm';
 
 interface CardsViewProps {
   cards: CreditCard[];
   loading: boolean;
+  onSuccess?: () => void;
 }
 
-export const CardsView: React.FC<CardsViewProps> = ({ cards, loading }) => {
+export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess }) => {
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+
+  const handleEdit = (card: CreditCard) => {
+    setEditingCard(card);
+    setShowCardModal(true);
+  };
+
+  const handleClose = () => {
+    setShowCardModal(false);
+    setEditingCard(null);
+  };
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -24,7 +39,10 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading }) => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-end">
-        <button className="text-sm font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline">
+        <button 
+          onClick={() => setShowCardModal(true)}
+          className="text-sm font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline"
+        >
           <Plus size={16} /> Add New Card
         </button>
       </div>
@@ -33,13 +51,24 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading }) => {
         {cards.map((card) => (
           <div 
             key={card.id} 
-            className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-xl transition-transform hover:-translate-y-1 ${card.color || 'bg-slate-800'}`}
+            className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-xl transition-transform hover:-translate-y-1 group ${card.color || 'bg-slate-800'}`}
           >
             {/* Background Decor */}
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl" />
             <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-black opacity-10 rounded-full blur-2xl" />
 
-            <div className="relative z-10 flex flex-col h-48 justify-between">
+            {/* Edit Overlay Button */}
+            <div className="absolute top-4 right-4 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+               <button 
+                 onClick={() => handleEdit(card)}
+                 className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white backdrop-blur-sm transition-colors"
+                 title="Edit Card"
+               >
+                 <Edit2 size={16} />
+               </button>
+            </div>
+
+            <div className="relative z-10 flex flex-col h-48 justify-between pointer-events-none">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-bold text-lg tracking-wide">{card.name}</h3>
@@ -72,7 +101,10 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading }) => {
         ))}
 
         {/* Add Card Placeholder */}
-        <button className="h-full min-h-[14rem] rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-900/50">
+        <button 
+          onClick={() => setShowCardModal(true)}
+          className="h-full min-h-[14rem] rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-900/50"
+        >
           <Plus size={32} className="mb-2" />
           <span className="font-medium">Link new card</span>
         </button>
@@ -102,6 +134,14 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading }) => {
           })}
         </div>
       </div>
+
+      {showCardModal && (
+        <CardForm 
+          onClose={handleClose} 
+          onSuccess={() => onSuccess && onSuccess()}
+          initialData={editingCard}
+        />
+      )}
     </div>
   );
 };

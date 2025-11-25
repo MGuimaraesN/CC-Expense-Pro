@@ -1,5 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, CheckCircle, AlertCircle, Newspaper, PieChart, Upload } from 'lucide-react';
+import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, CheckCircle, AlertCircle, Newspaper, PieChart, Upload, Menu } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionTable } from './components/TransactionTable';
 import { TransactionForm } from './components/TransactionForm';
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Toast Logic
   const showToast = (message: string, type: ToastType) => {
@@ -91,6 +92,11 @@ const App: React.FC = () => {
 
   const handleDelete = (id: string) => {
     deleteMutation.mutate(id);
+  };
+
+  const handleNavClick = (view: ViewState) => {
+    setCurrentView(view);
+    setMobileMenuOpen(false);
   };
 
   const renderContent = () => {
@@ -166,86 +172,114 @@ const App: React.FC = () => {
     }
   };
 
+  const NavigationContent = () => (
+    <>
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-8">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold">C</span>
+          </div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">CC-Expense</h1>
+        </div>
+        
+        <nav className="space-y-2">
+          <NavItem 
+            onClick={() => handleNavClick('dashboard')} 
+            active={currentView === 'dashboard'} 
+            icon={<LayoutDashboard size={20} />} 
+            label="Dashboard" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('transactions')} 
+            active={currentView === 'transactions'} 
+            icon={<Receipt size={20} />} 
+            label="Transactions" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('cards')} 
+            active={currentView === 'cards'} 
+            icon={<CreditCard size={20} />} 
+            label="Cards" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('budgets')} 
+            active={currentView === 'budgets'} 
+            icon={<PieChart size={20} />} 
+            label="Budgets" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('news')} 
+            active={currentView === 'news'} 
+            icon={<Newspaper size={20} />} 
+            label="News & AI" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('import')} 
+            active={currentView === 'import'} 
+            icon={<Upload size={20} />} 
+            label="Import CSV" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('settings')} 
+            active={currentView === 'settings'} 
+            icon={<Settings size={20} />} 
+            label="Settings" 
+          />
+        </nav>
+      </div>
+
+      <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+           <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500">AU</div>
+           <div className="flex-1 min-w-0">
+             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">Admin User</p>
+             <p className="text-xs text-slate-500 truncate">admin@corp.com</p>
+           </div>
+           <button className="text-slate-400 hover:text-slate-600"><LogOut size={16} /></button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       <div className="flex h-screen bg-gray-50 dark:bg-slate-950 overflow-hidden font-sans">
         
-        {/* Sidebar */}
+        {/* Desktop Sidebar */}
         <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 hidden md:flex flex-col">
-          <div className="p-6">
-            <div className="flex items-center gap-2 mb-8">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold">C</span>
-              </div>
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white">CC-Expense</h1>
-            </div>
-            
-            <nav className="space-y-2">
-              <NavItem 
-                onClick={() => setCurrentView('dashboard')} 
-                active={currentView === 'dashboard'} 
-                icon={<LayoutDashboard size={20} />} 
-                label="Dashboard" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('transactions')} 
-                active={currentView === 'transactions'} 
-                icon={<Receipt size={20} />} 
-                label="Transactions" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('cards')} 
-                active={currentView === 'cards'} 
-                icon={<CreditCard size={20} />} 
-                label="Cards" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('budgets')} 
-                active={currentView === 'budgets'} 
-                icon={<PieChart size={20} />} 
-                label="Budgets" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('news')} 
-                active={currentView === 'news'} 
-                icon={<Newspaper size={20} />} 
-                label="News & AI" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('import')} 
-                active={currentView === 'import'} 
-                icon={<Upload size={20} />} 
-                label="Import CSV" 
-              />
-              <NavItem 
-                onClick={() => setCurrentView('settings')} 
-                active={currentView === 'settings'} 
-                icon={<Settings size={20} />} 
-                label="Settings" 
-              />
-            </nav>
-          </div>
-
-          <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-               <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500">AU</div>
-               <div className="flex-1 min-w-0">
-                 <p className="text-sm font-medium text-slate-900 dark:text-white truncate">Admin User</p>
-                 <p className="text-xs text-slate-500 truncate">admin@corp.com</p>
-               </div>
-               <button className="text-slate-400 hover:text-slate-600"><LogOut size={16} /></button>
-            </div>
-          </div>
+           <NavigationContent />
         </aside>
+
+        {/* Mobile Sidebar Overlay */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setMobileMenuOpen(false)}>
+             <div className="fixed inset-y-0 left-0 w-64 bg-white dark:bg-slate-900 shadow-2xl z-50 flex flex-col animate-in slide-in-from-left duration-300" onClick={e => e.stopPropagation()}>
+                 <div className="absolute right-4 top-4">
+                   <button onClick={() => setMobileMenuOpen(false)} className="text-slate-400">
+                     <X size={24} />
+                   </button>
+                 </div>
+                 <NavigationContent />
+             </div>
+          </div>
+        )}
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           
           {/* Header */}
-          <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-16 flex items-center justify-between px-8">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{getHeaderTitle()}</h2>
+          <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-16 flex items-center justify-between px-4 md:px-8">
+            <div className="flex items-center gap-3">
+               <button 
+                 onClick={() => setMobileMenuOpen(true)}
+                 className="md:hidden text-slate-500 hover:text-slate-700 dark:text-slate-400"
+               >
+                 <Menu size={24} />
+               </button>
+               <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{getHeaderTitle()}</h2>
+            </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
               <button 
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
@@ -255,23 +289,23 @@ const App: React.FC = () => {
               
               <button 
                 onClick={() => setShowModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95"
               >
                 <Plus size={18} />
-                Add Expense
+                <span className="hidden sm:inline">Add Expense</span>
               </button>
             </div>
           </header>
 
           {/* Scrollable Area */}
-          <div className="flex-1 overflow-y-auto p-8">
+          <div className="flex-1 overflow-y-auto p-4 md:p-8">
             <div className="max-w-7xl mx-auto">
               {renderContent()}
             </div>
           </div>
 
           {/* Toast Container */}
-          <div className="absolute bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+          <div className="absolute bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none max-w-[calc(100vw-3rem)]">
             {toasts.map(toast => (
               <div 
                 key={toast.id} 
@@ -281,9 +315,9 @@ const App: React.FC = () => {
                     : 'bg-white dark:bg-slate-800 border-red-100 dark:border-red-900/30 text-red-700 dark:text-red-400'
                 }`}
               >
-                {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                {toast.type === 'success' ? <CheckCircle size={18} className="shrink-0" /> : <AlertCircle size={18} className="shrink-0" />}
                 <p className="text-sm font-medium pr-4 text-slate-700 dark:text-slate-200">{toast.message}</p>
-                <button onClick={() => removeToast(toast.id)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <button onClick={() => removeToast(toast.id)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
                   <X size={14} />
                 </button>
               </div>

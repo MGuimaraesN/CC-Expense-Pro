@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { TransactionTable } from './TransactionTable';
-import { Transaction, CreditCard, TransactionType } from '../types';
-import { Search, Filter, AlertCircle, Calendar, Tag as TagIcon, Check } from 'lucide-react';
+import { Transaction, CreditCard, TransactionType, TransactionStatus } from '../types';
+import { Search, Filter, AlertCircle, Calendar, Tag as TagIcon, Check, ArrowUpCircle, ArrowDownCircle, Wallet } from 'lucide-react';
 import { TransactionForm } from './TransactionForm';
+import { useUpdateTransaction } from '../hooks/useTransactions';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -26,6 +27,20 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
   
   // Edit State
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  const updateMutation = useUpdateTransaction({
+    onSuccess: () => {
+      if (showToast) showToast('Transaction status updated', 'success');
+    },
+    onError: (err) => {
+      if (showToast) showToast(`Failed to update status: ${err.message}`, 'error');
+    }
+  });
+
+  const handleStatusToggle = (t: Transaction) => {
+    const newStatus = t.status === TransactionStatus.PAID ? TransactionStatus.PENDING : TransactionStatus.PAID;
+    updateMutation.mutate({ id: t.id, status: newStatus });
+  };
 
   // Derive unique tags from transactions
   const availableTags = useMemo(() => {
@@ -72,6 +87,20 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
     return matchesSearch && matchesType && matchesCard && matchesCategory && matchesDate && matchesTags;
   });
 
+  // Calculate Summary based on filtered transactions
+  const summary = useMemo(() => {
+    return filteredTransactions.reduce((acc, t) => {
+      if (t.type === TransactionType.INCOME) {
+        acc.income += t.amount;
+      } else {
+        acc.expense += t.amount;
+      }
+      return acc;
+    }, { income: 0, expense: 0 });
+  }, [filteredTransactions]);
+
+  const netBalance = summary.income - summary.expense;
+
   if (error) {
      return (
        <div className="p-6 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 flex items-start gap-3">
@@ -84,9 +113,42 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
      );
   }
 
+  const formatMoney = (amount: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
+      {/* Financial Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+           <div>
+             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Total Income</p>
+             <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatMoney(summary.income)}</h3>
+           </div>
+           <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400">
+             <ArrowUpCircle size={24} />
+           </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+           <div>
+             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Total Expenses</p>
+             <h3 className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{formatMoney(summary.expense)}</h3>
+           </div>
+           <div className="p-3 bg-red-50 dark:bg-red-900/30 rounded-full text-red-600 dark:text-red-400">
+             <ArrowDownCircle size={24} />
+           </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+           <div>
+             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Net Balance</p>
+             <h3 className={`text-2xl font-bold mt-1 ${netBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-red-600 dark:text-red-400'}`}>{formatMoney(netBalance)}</h3>
+           </div>
+           <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400">
+             <Wallet size={24} />
+           </div>
+        </div>
+      </div>
+
       {/* Filter Bar */}
       <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 space-y-4">
         
@@ -217,6 +279,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
         cards={cards} 
         onDelete={onDelete}
         onEdit={(t) => setEditingTransaction(t)}
+        onStatusToggle={handleStatusToggle}
         isDeleting={isDeleting}
       />
 

@@ -1,12 +1,12 @@
-import { Transaction, CreditCard, TransactionType, Currency, DashboardStats, Budget, BudgetUsage, RecurrenceFrequency } from '../types';
+import { Transaction, CreditCard, TransactionType, Currency, DashboardStats, Budget, BudgetUsage, RecurrenceFrequency, TransactionStatus } from '../types';
 
 // Mock Data Stores
-const MOCK_CARDS: CreditCard[] = [
+let MOCK_CARDS: CreditCard[] = [
   { id: 'c1', name: 'Nubank Platinum', last4Digits: '4242', limit: 15000, closingDay: 5, dueDay: 12, color: 'bg-purple-600' },
   { id: 'c2', name: 'XP Visa Infinite', last4Digits: '8811', limit: 50000, closingDay: 20, dueDay: 27, color: 'bg-slate-800' },
 ];
 
-let MOCK_TRANSACTIONS: Transaction[] = [
+const DEFAULT_TRANSACTIONS: Transaction[] = [
   {
     id: 't1',
     description: 'AWS Infrastructure',
@@ -14,6 +14,7 @@ let MOCK_TRANSACTIONS: Transaction[] = [
     currency: Currency.USD,
     date: new Date().toISOString(),
     type: TransactionType.EXPENSE,
+    status: TransactionStatus.PAID,
     cardId: 'c2',
     category: 'Infrastructure',
     tags: ['Cloud', 'DevOps'],
@@ -28,6 +29,7 @@ let MOCK_TRANSACTIONS: Transaction[] = [
     currency: Currency.BRL,
     date: new Date().toISOString(),
     type: TransactionType.EXPENSE,
+    status: TransactionStatus.PENDING,
     cardId: 'c1',
     category: 'Equipment',
     tags: ['Office'],
@@ -44,12 +46,35 @@ let MOCK_TRANSACTIONS: Transaction[] = [
     currency: Currency.BRL,
     date: new Date().toISOString(),
     type: TransactionType.INCOME,
+    status: TransactionStatus.PAID,
     category: 'Services',
     tags: ['Consulting'],
     isInstallment: false,
     isRecurring: false,
   }
 ];
+
+const STORAGE_KEY_TRANSACTIONS = 'cc_expense_transactions';
+
+const loadTransactions = (): Transaction[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
+    return stored ? JSON.parse(stored) : DEFAULT_TRANSACTIONS;
+  } catch (error) {
+    console.warn("Failed to load transactions from storage", error);
+    return DEFAULT_TRANSACTIONS;
+  }
+};
+
+let MOCK_TRANSACTIONS: Transaction[] = loadTransactions();
+
+const saveTransactionsToStorage = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(MOCK_TRANSACTIONS));
+  } catch (error) {
+    console.error("Failed to save transactions to storage", error);
+  }
+};
 
 let MOCK_BUDGETS: Budget[] = [
   { id: 'b1', category: 'Infrastructure', amount: 500, period: 'MONTHLY' },
@@ -67,6 +92,9 @@ export const createTransaction = async (data: Partial<Transaction>): Promise<Tra
   const transactionsToCreate: Transaction[] = [];
   const baseDate = new Date(data.date || new Date());
   const groupId = generateId();
+
+  // Default status logic: Income = PAID, Expense = PENDING (unless specified)
+  const defaultStatus = data.status || (data.type === TransactionType.INCOME ? TransactionStatus.PAID : TransactionStatus.PENDING);
 
   if (data.isInstallment && data.totalInstallments && data.totalInstallments > 1 && data.type === TransactionType.EXPENSE) {
     // Logic: Split total amount into parts and generate future dates
@@ -90,6 +118,7 @@ export const createTransaction = async (data: Partial<Transaction>): Promise<Tra
         installmentNumber: i + 1,
         totalInstallments: data.totalInstallments,
         tags: data.tags || [],
+        status: i === 0 ? defaultStatus : TransactionStatus.PENDING, // Future installments are pending
       } as Transaction);
     }
   } else if (data.isRecurring) {
@@ -108,11 +137,17 @@ export const createTransaction = async (data: Partial<Transaction>): Promise<Tra
         recurringDate.setFullYear(baseDate.getFullYear() + i);
       }
       
+      // Stop if exceeds end date
+      if (data.recurrenceEndDate && recurringDate > new Date(data.recurrenceEndDate)) {
+        break;
+      }
+
       transactionsToCreate.push({
         ...data,
         id: generateId(),
         date: recurringDate.toISOString(),
         tags: data.tags || [],
+        status: i === 0 ? defaultStatus : TransactionStatus.PENDING, // Future recurring are pending
       } as Transaction);
     }
 
@@ -122,11 +157,13 @@ export const createTransaction = async (data: Partial<Transaction>): Promise<Tra
       ...data,
       id: generateId(),
       tags: data.tags || [],
+      status: defaultStatus,
     } as Transaction);
   }
 
   // "Save" to mock DB
   MOCK_TRANSACTIONS = [...transactionsToCreate, ...MOCK_TRANSACTIONS];
+  saveTransactionsToStorage();
   
   return transactionsToCreate;
 };
@@ -141,6 +178,7 @@ export const updateTransaction = async (data: Partial<Transaction>): Promise<Tra
       ...data,
       tags: data.tags || MOCK_TRANSACTIONS[index].tags 
     };
+    saveTransactionsToStorage();
     return MOCK_TRANSACTIONS[index];
   }
   throw new Error("Transaction not found");
@@ -154,6 +192,7 @@ export const fetchTransactions = async (): Promise<Transaction[]> => {
 export const deleteTransaction = async (id: string): Promise<void> => {
   await new Promise(resolve => setTimeout(resolve, 600)); 
   MOCK_TRANSACTIONS = MOCK_TRANSACTIONS.filter(t => t.id !== id);
+  saveTransactionsToStorage();
 };
 
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
@@ -178,6 +217,23 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
 
 export const fetchCards = async (): Promise<CreditCard[]> => {
   return MOCK_CARDS;
+};
+
+export const createCard = async (cardData: Omit<CreditCard, 'id'>): Promise<CreditCard> => {
+  await new Promise(resolve => setTimeout(resolve, 600));
+  const newCard = { ...cardData, id: generateId() };
+  MOCK_CARDS = [...MOCK_CARDS, newCard];
+  return newCard;
+};
+
+export const updateCard = async (cardData: CreditCard): Promise<CreditCard> => {
+  await new Promise(resolve => setTimeout(resolve, 600));
+  const index = MOCK_CARDS.findIndex(c => c.id === cardData.id);
+  if (index !== -1) {
+    MOCK_CARDS[index] = cardData;
+    return cardData;
+  }
+  throw new Error("Card not found");
 };
 
 // --- BUDGET LOGIC ---
@@ -239,11 +295,13 @@ export const importTransactionsFromCSV = async (csvText: string): Promise<number
       const category = parts[3]?.trim() || 'Uncategorized';
       
       if (!isNaN(amount) && desc) {
+        const type = amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
         await createTransaction({
           description: desc,
           amount: Math.abs(amount),
           date: new Date(date).toISOString(),
-          type: amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME,
+          type: type,
+          status: type === TransactionType.INCOME ? TransactionStatus.PAID : TransactionStatus.PENDING,
           category: category,
           currency: Currency.BRL,
           tags: ['Imported'],

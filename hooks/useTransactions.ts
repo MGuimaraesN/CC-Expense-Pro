@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchTransactions, createTransaction, updateTransaction, deleteTransaction, fetchCards, fetchDashboardStats } from '../services/transactionService';
+import { fetchTransactions, createTransaction, updateTransaction, deleteTransaction, fetchCards, fetchDashboardStats, createCard, updateCard } from '../services/transactionService';
 import { Transaction } from '../types';
 
 interface MutationOptions {
@@ -64,6 +64,34 @@ export const useCards = () => {
   return useQuery({
     queryKey: ['cards'],
     queryFn: fetchCards,
+  });
+};
+
+export const useCreateCard = (options?: MutationOptions) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createCard,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+      if (options?.onSuccess) options.onSuccess();
+    },
+    onError: (error) => {
+      if (options?.onError) options.onError(error);
+    }
+  });
+};
+
+export const useUpdateCard = (options?: MutationOptions) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateCard,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+      if (options?.onSuccess) options.onSuccess();
+    },
+    onError: (error) => {
+      if (options?.onError) options.onError(error);
+    }
   });
 };
 

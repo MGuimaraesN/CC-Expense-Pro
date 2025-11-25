@@ -8,6 +8,11 @@ export enum TransactionType {
   INCOME = 'INCOME',
 }
 
+export enum TransactionStatus {
+  PAID = 'PAID',
+  PENDING = 'PENDING',
+}
+
 export enum RecurrenceFrequency {
   MONTHLY = 'MONTHLY',
   WEEKLY = 'WEEKLY',
@@ -37,6 +42,7 @@ export interface Transaction {
   currency: Currency;
   date: string; // ISO String
   type: TransactionType;
+  status: TransactionStatus;
   cardId?: string;
   category: string;
   tags: string[]; // Tag IDs
@@ -50,6 +56,7 @@ export interface Transaction {
   // Recurrence
   isRecurring: boolean;
   recurrenceFrequency?: RecurrenceFrequency;
+  recurrenceEndDate?: string;
 }
 
 export interface Budget {
