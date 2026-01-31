@@ -1,5 +1,7 @@
-import React from 'react';
-import { Moon, Sun, Bell, Shield, Globe, Monitor } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Moon, Shield, Globe, Monitor, Database, Download, Upload, AlertTriangle } from 'lucide-react';
+import { generateBackup, restoreBackup } from '../services/userService';
+import { toast } from 'sonner';
 
 interface SettingsViewProps {
   darkMode: boolean;
@@ -7,9 +9,100 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMode }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const promise = new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        try {
+          const success = restoreBackup(content);
+          if (success) {
+            resolve('Data restored!');
+            setTimeout(() => window.location.reload(), 1500);
+          } else {
+            reject(new Error('Invalid backup file structure'));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+
+    toast.promise(promise, {
+      loading: 'Validating and restoring data...',
+      success: 'System restored successfully! Reloading...',
+      error: (err) => `Restore failed: ${err.message}`
+    });
+    
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-500">
       
+      {/* Security & Data Safeguard */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-700">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <Shield size={20} className="text-emerald-500" /> Data Safeguard
+          </h3>
+        </div>
+        <div className="p-6 space-y-6">
+          <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+             <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400">
+               <Database size={24} />
+             </div>
+             <div className="flex-1">
+               <h4 className="font-semibold text-slate-900 dark:text-white">Full System Backup</h4>
+               <p className="text-sm text-slate-500 dark:text-slate-400">Download all your data (Transactions, Cards, Profile) as a JSON file.</p>
+             </div>
+             <button 
+               onClick={() => {
+                 generateBackup();
+                 toast.success('Backup file generated');
+               }}
+               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
+             >
+               <Download size={16} /> Export JSON
+             </button>
+          </div>
+
+           <div className="flex items-center gap-4 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800">
+             <div className="p-3 bg-amber-100 dark:bg-amber-900/30 rounded-full text-amber-600 dark:text-amber-400">
+               <Upload size={24} />
+             </div>
+             <div className="flex-1">
+               <h4 className="font-semibold text-slate-900 dark:text-white">Restore Data</h4>
+               <p className="text-sm text-slate-500 dark:text-slate-400">Overwrite current data with a backup file.</p>
+               <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                 <AlertTriangle size={10} /> This action cannot be undone.
+               </p>
+             </div>
+             <input 
+               type="file" 
+               accept=".json" 
+               className="hidden" 
+               ref={fileInputRef} 
+               onChange={handleRestore}
+             />
+             <button 
+               onClick={() => fileInputRef.current?.click()}
+               className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+             >
+               <Upload size={16} /> Import Backup
+             </button>
+          </div>
+        </div>
+      </div>
+
       {/* Appearance */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
         <div className="p-6 border-b border-slate-100 dark:border-slate-700">
@@ -57,29 +150,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
                  <option value="pt">Português</option>
                </select>
              </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Notifications */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-            <Bell size={20} className="text-slate-400" /> Notifications
-          </h3>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="email-notif" className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" defaultChecked />
-              <label htmlFor="email-notif" className="text-slate-700 dark:text-slate-300">Email Alerts for Invoice Closing</label>
-            </div>
-          </div>
-           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id="push-notif" className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" />
-              <label htmlFor="push-notif" className="text-slate-700 dark:text-slate-300">Push Notifications for High Expenses</label>
-            </div>
           </div>
         </div>
       </div>

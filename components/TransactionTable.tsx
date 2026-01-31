@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Transaction, Currency, CreditCard, TransactionType, TransactionStatus } from '../types';
 import { Skeleton } from './ui/Skeleton';
-import { Calendar, Repeat, Layers, Trash2, AlertTriangle, PlusCircle, Edit2, ArrowUpDown, ArrowUp, ArrowDown, Tag, ArrowUpCircle, ArrowDownCircle, CheckCircle, Clock } from 'lucide-react';
+import { Repeat, Layers, Trash2, AlertTriangle, PlusCircle, Edit2, ArrowUpDown, ArrowUp, ArrowDown, ArrowUpCircle, ArrowDownCircle, CheckCircle, Clock, Globe } from 'lucide-react';
 
 interface TransactionTableProps {
   transactions: Transaction[];
@@ -220,9 +220,17 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({ transactions
                      </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <span className={`font-semibold text-sm ${t.type === TransactionType.INCOME ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
-                      {t.type === TransactionType.INCOME ? '+' : ''}{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: t.currency }).format(t.amount)}
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className={`font-semibold text-sm ${t.type === TransactionType.INCOME ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}`}>
+                        {t.type === TransactionType.INCOME ? '+' : ''}{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: t.currency }).format(t.amount)}
+                      </span>
+                      {/* Foreign Currency Indicator */}
+                      {t.originalAmount && t.originalCurrency && t.originalCurrency !== Currency.BRL && (
+                        <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <Globe size={10} /> {new Intl.NumberFormat('en-US', { style: 'currency', currency: t.originalCurrency }).format(t.originalAmount)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   {(onDelete || onEdit) && (
                     <td className="px-6 py-4 text-center">

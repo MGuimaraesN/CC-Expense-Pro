@@ -1,5 +1,5 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
-import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, CheckCircle, AlertCircle, Newspaper, PieChart, Upload, Menu } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, Newspaper, PieChart, Upload, Menu } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { TransactionTable } from './components/TransactionTable';
 import { TransactionForm } from './components/TransactionForm';
@@ -9,18 +9,13 @@ import { TransactionsView } from './components/TransactionsView';
 import { NewsView } from './components/NewsView';
 import { BudgetView } from './components/BudgetView';
 import { ImportView } from './components/ImportView';
+import { LoginView } from './components/LoginView';
+import { UserManagementView } from './components/UserManagementView';
 import { useTransactions, useCards, useDashboardStats, useCreateTransaction, useDeleteTransaction } from './hooks/useTransactions';
+import { isAuthenticated, logout, getUserProfile } from './services/userService';
+import { Toaster, toast } from 'sonner';
 
-// Toast System
-type ToastType = 'success' | 'error';
-interface Toast {
-  id: string;
-  message: string;
-  type: ToastType;
-}
-const ToastContext = createContext<{ showToast: (msg: string, type: ToastType) => void }>({ showToast: () => {} });
-
-type ViewState = 'dashboard' | 'transactions' | 'cards' | 'budgets' | 'news' | 'import' | 'settings';
+type ViewState = 'dashboard' | 'transactions' | 'cards' | 'budgets' | 'news' | 'import' | 'settings' | 'user';
 
 // Sidebar Item Component
 const NavItem: React.FC<{ 
@@ -39,29 +34,34 @@ const NavItem: React.FC<{
 );
 
 const App: React.FC = () => {
+  const [isAuth, setIsAuth] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState(getUserProfile());
 
-  // Toast Logic
-  const showToast = (message: string, type: ToastType) => {
-    const id = Math.random().toString(36).substr(2, 9);
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
-  };
+  // Check Auth on Mount & Fix F5 Refresh Logic
+  useEffect(() => {
+    const authStatus = isAuthenticated();
+    setIsAuth(authStatus);
+    if (!authStatus && window.location.pathname !== '/' && window.location.pathname !== '/login') {
+       // Simple hash routing protection or state reset
+       setCurrentView('dashboard');
+    }
+  }, []);
 
-  const removeToast = (id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-  
-  // Data State via React Query Hooks
+  // Update Profile when view changes (simple sync)
+  useEffect(() => {
+    if(currentView === 'dashboard' || currentView === 'user') {
+        setUserProfile(getUserProfile());
+    }
+  }, [currentView]);
+
+  // Data State via React Query Hooks (only enabled if auth)
   const deleteMutation = useDeleteTransaction({
-    onSuccess: () => showToast('Transaction deleted successfully', 'success'),
-    onError: () => showToast('Failed to delete transaction', 'error'),
+    onSuccess: () => toast.success('Transaction deleted successfully'),
+    onError: () => toast.error('Failed to delete transaction'),
   });
 
   const { data: transactions = [], isLoading: loadingTransactions, isError, error } = useTransactions();
@@ -70,12 +70,19 @@ const App: React.FC = () => {
   
   const isLoading = loadingTransactions || loadingStats || loadingCards;
 
+  // Calculate unique tags for autocomplete
+  const availableTags = useMemo(() => {
+    const tags = new Set<string>();
+    transactions.forEach(t => t.tags?.forEach(tag => tags.add(tag)));
+    return Array.from(tags);
+  }, [transactions]);
+
   // Global Error Handler for Query
   useEffect(() => {
-    if (isError && error) {
-      showToast(error.message || 'Failed to fetch data', 'error');
+    if (isError && error && isAuth) {
+      toast.error(error.message || 'Failed to fetch data');
     }
-  }, [isError, error]);
+  }, [isError, error, isAuth]);
 
   // Toggle Dark Mode
   useEffect(() => {
@@ -87,7 +94,7 @@ const App: React.FC = () => {
   }, [darkMode]);
 
   const handleCreateSuccess = () => {
-    showToast('Transaction saved successfully', 'success');
+    toast.success('Transaction saved successfully');
   };
 
   const handleDelete = (id: string) => {
@@ -97,6 +104,12 @@ const App: React.FC = () => {
   const handleNavClick = (view: ViewState) => {
     setCurrentView(view);
     setMobileMenuOpen(false);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setIsAuth(false);
+    toast.info('Logged out successfully');
   };
 
   const renderContent = () => {
@@ -132,7 +145,7 @@ const App: React.FC = () => {
             onDelete={handleDelete}
             isDeleting={deleteMutation.isPending}
             error={isError ? error : null}
-            showToast={showToast}
+            showToast={(msg, type) => type === 'success' ? toast.success(msg) : toast.error(msg)}
           />
         );
       case 'cards':
@@ -155,6 +168,10 @@ const App: React.FC = () => {
         return (
           <SettingsView darkMode={darkMode} setDarkMode={setDarkMode} />
         );
+      case 'user':
+        return (
+          <UserManagementView />
+        );
       default:
         return null;
     }
@@ -169,8 +186,26 @@ const App: React.FC = () => {
       case 'news': return 'Market News';
       case 'import': return 'Import Data';
       case 'settings': return 'System Settings';
+      case 'user': return 'User Profile';
     }
   };
+
+  // Login View Wrapper
+  if (!isAuth) {
+    return (
+        <div className="text-slate-900 dark:text-slate-100 dark:bg-slate-950 transition-colors duration-200">
+             <LoginView onLoginSuccess={() => setIsAuth(true)} />
+             <div className="absolute top-4 right-4 z-50">
+               <button 
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 bg-white/20 hover:bg-white/30 rounded-full text-slate-500 dark:text-slate-300 transition-colors"
+               >
+                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              </button>
+             </div>
+        </div>
+    );
+  }
 
   const NavigationContent = () => (
     <>
@@ -217,7 +252,7 @@ const App: React.FC = () => {
             onClick={() => handleNavClick('import')} 
             active={currentView === 'import'} 
             icon={<Upload size={20} />} 
-            label="Import CSV" 
+            label="Import Data" 
           />
           <NavItem 
             onClick={() => handleNavClick('settings')} 
@@ -229,20 +264,29 @@ const App: React.FC = () => {
       </div>
 
       <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800">
-        <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
-           <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500">AU</div>
-           <div className="flex-1 min-w-0">
-             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">Admin User</p>
-             <p className="text-xs text-slate-500 truncate">admin@corp.com</p>
+        <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer group" onClick={() => handleNavClick('user')}>
+           <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center overflow-hidden">
+             {userProfile.avatarUrl ? (
+                <img src={userProfile.avatarUrl} className="w-full h-full object-cover" alt="Avatar" />
+             ) : (
+                <span className="text-indigo-600 dark:text-indigo-400 font-bold">{userProfile.name.charAt(0)}</span>
+             )}
            </div>
-           <button className="text-slate-400 hover:text-slate-600"><LogOut size={16} /></button>
+           <div className="flex-1 min-w-0">
+             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{userProfile.name}</p>
+             <p className="text-xs text-slate-500 truncate">{userProfile.email}</p>
+           </div>
+           <button onClick={(e) => { e.stopPropagation(); handleLogout(); }} className="text-slate-400 hover:text-red-500 transition-colors">
+             <LogOut size={16} />
+           </button>
         </div>
       </div>
     </>
   );
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <>
+      <Toaster position="bottom-right" richColors />
       <div className="flex h-screen bg-gray-50 dark:bg-slate-950 overflow-hidden font-sans">
         
         {/* Desktop Sidebar */}
@@ -304,26 +348,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Toast Container */}
-          <div className="absolute bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none max-w-[calc(100vw-3rem)]">
-            {toasts.map(toast => (
-              <div 
-                key={toast.id} 
-                className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border animate-in slide-in-from-right-10 fade-in duration-300 ${
-                  toast.type === 'success' 
-                    ? 'bg-white dark:bg-slate-800 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
-                    : 'bg-white dark:bg-slate-800 border-red-100 dark:border-red-900/30 text-red-700 dark:text-red-400'
-                }`}
-              >
-                {toast.type === 'success' ? <CheckCircle size={18} className="shrink-0" /> : <AlertCircle size={18} className="shrink-0" />}
-                <p className="text-sm font-medium pr-4 text-slate-700 dark:text-slate-200">{toast.message}</p>
-                <button onClick={() => removeToast(toast.id)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-
         </main>
 
         {/* Modals */}
@@ -332,10 +356,11 @@ const App: React.FC = () => {
             onClose={() => setShowModal(false)} 
             onSuccess={handleCreateSuccess}
             cards={cards}
+            availableTags={availableTags}
           />
         )}
       </div>
-    </ToastContext.Provider>
+    </>
   );
 };
 

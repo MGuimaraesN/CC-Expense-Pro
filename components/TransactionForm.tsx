@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus, CalendarOff } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus, CalendarOff, Layers } from 'lucide-react';
 import { TransactionType, Currency, CreditCard, Transaction, RecurrenceFrequency, TransactionStatus } from '../types';
 import { useCreateTransaction, useUpdateTransaction } from '../hooks/useTransactions';
 
@@ -11,6 +11,7 @@ interface TransactionFormProps {
   onSuccess: () => void;
   cards: CreditCard[];
   initialData?: Transaction | null;
+  availableTags?: string[];
 }
 
 // Zod Schema Validation
@@ -27,11 +28,12 @@ const transactionSchema = z.object({
   recurrenceEndDate: z.string().optional(),
   isInstallment: z.boolean(),
   totalInstallments: z.number().min(1).max(24).optional(),
+  installmentNumber: z.number().min(1).optional(),
 });
 
 type TransactionFormData = z.infer<typeof transactionSchema>;
 
-export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuccess, cards, initialData }) => {
+export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuccess, cards, initialData, availableTags = [] }) => {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
 
@@ -46,6 +48,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
     defaultValues: {
       date: new Date().toISOString().split('T')[0],
       totalInstallments: 1,
+      installmentNumber: 1,
       isInstallment: false,
       isRecurring: false,
       recurrenceFrequency: RecurrenceFrequency.MONTHLY,
@@ -76,6 +79,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
         recurrenceEndDate: initialData.recurrenceEndDate ? initialData.recurrenceEndDate.split('T')[0] : undefined,
         isInstallment: initialData.isInstallment,
         totalInstallments: initialData.totalInstallments || 1,
+        installmentNumber: initialData.installmentNumber || 1,
       });
       setTags(initialData.tags || []);
     }
@@ -114,6 +118,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
         amount: Number(data.amount),
         date: new Date(data.date).toISOString(),
         totalInstallments: Number(data.totalInstallments),
+        installmentNumber: Number(data.installmentNumber),
         currency: Currency.BRL,
         tags: tags,
         recurrenceEndDate: data.recurrenceEndDate ? new Date(data.recurrenceEndDate).toISOString() : undefined,
@@ -128,7 +133,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
       onClose();
     } catch (error) {
       console.error("Failed to save transaction", error);
-      // Error handling is managed by the hook callbacks in App.tsx/TransactionsView
     }
   };
 
@@ -243,7 +247,11 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
                     onKeyDown={handleAddTag}
                     className="bg-transparent border-none focus:ring-0 text-sm w-full dark:text-white"
                     placeholder="Type & press Enter"
+                    list="available-tags"
                  />
+                 <datalist id="available-tags">
+                   {availableTags.map(tag => <option key={tag} value={tag} />)}
+                 </datalist>
               </div>
             </div>
           </div>
@@ -318,38 +326,49 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
 
             {/* Installments Toggle */}
             {watchType === TransactionType.EXPENSE && (
-              <div className={`flex items-center space-x-3 p-4 rounded-lg border transition-colors ${isInstallment ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-slate-50 border-transparent dark:bg-slate-800'}`}>
-                <input 
-                  type="checkbox" 
-                  id="installment-toggle"
-                  disabled={isEditing && initialData?.isInstallment}
-                  {...register('isInstallment')}
-                  className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 disabled:opacity-50"
-                />
-                <label htmlFor="installment-toggle" className={`text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none ${isEditing && initialData?.isInstallment ? 'opacity-50' : ''}`}>
-                  Installments
-                </label>
+              <div className={`p-4 rounded-lg border transition-colors ${isInstallment ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-slate-50 border-transparent dark:bg-slate-800'}`}>
+                <div className="flex items-center space-x-3 mb-2">
+                  <input 
+                    type="checkbox" 
+                    id="installment-toggle"
+                    disabled={isEditing && initialData?.isInstallment}
+                    {...register('isInstallment')}
+                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 disabled:opacity-50"
+                  />
+                  <label htmlFor="installment-toggle" className={`text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none ${isEditing && initialData?.isInstallment ? 'opacity-50' : ''}`}>
+                   <Layers size={16} /> Installments
+                  </label>
+                </div>
+                
+                 {isInstallment && (
+                    <div className="grid grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-2 duration-300 mt-2">
+                       <div>
+                         <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Total</label>
+                         <select 
+                            {...register('totalInstallments', { valueAsNumber: true })}
+                            disabled={isEditing}
+                            className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white disabled:opacity-70"
+                          >
+                            {[2, 3, 4, 5, 6, 10, 12, 18, 24].map(n => (
+                              <option key={n} value={n}>{n}x</option>
+                            ))}
+                          </select>
+                       </div>
+                       <div>
+                         <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Current #</label>
+                         <input
+                            type="number"
+                            {...register('installmentNumber', { valueAsNumber: true })}
+                            disabled={isEditing}
+                            min={1}
+                            className="w-full p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white disabled:opacity-70"
+                          />
+                       </div>
+                    </div>
+                  )}
               </div>
             )}
           </div>
-
-          {isInstallment && watchType === TransactionType.EXPENSE && (
-            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Number of Installments</label>
-              <select 
-                {...register('totalInstallments', { valueAsNumber: true })}
-                disabled={isEditing}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:text-white disabled:opacity-70"
-              >
-                {[2, 3, 4, 5, 6, 10, 12, 18, 24].map(n => (
-                  <option key={n} value={n}>{n}x</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 mt-2">
-                This will create multiple transaction records.
-              </p>
-            </div>
-          )}
 
           <div className="pt-4">
             <button 

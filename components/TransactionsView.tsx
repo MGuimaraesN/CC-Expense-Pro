@@ -329,6 +329,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
           onSuccess={() => showToast && showToast('Transaction updated successfully', 'success')}
           cards={cards}
           initialData={editingTransaction}
+          availableTags={availableTags}
         />
       )}
     </div>

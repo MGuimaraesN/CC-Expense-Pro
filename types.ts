@@ -1,6 +1,7 @@
 export enum Currency {
   BRL = 'BRL',
   USD = 'USD',
+  EUR = 'EUR',
 }
 
 export enum TransactionType {
@@ -38,8 +39,14 @@ export interface Tag {
 export interface Transaction {
   id: string;
   description: string;
-  amount: number;
-  currency: Currency;
+  amount: number; // Stored in BRL for consistency
+  currency: Currency; // The currency it was converted TO (usually BRL)
+  
+  // Foreign Exchange Tracking
+  originalAmount?: number;
+  originalCurrency?: Currency;
+  exchangeRate?: number;
+
   date: string; // ISO String
   type: TransactionType;
   status: TransactionStatus;
@@ -73,16 +80,33 @@ export interface BudgetUsage extends Budget {
   percentage: number;
 }
 
+export interface FinancialHealth {
+  status: 'HEALTHY' | 'WARNING' | 'DANGER';
+  currentMonthTotal: number;
+  averageLast3Months: number;
+  percentageDiff: number;
+  message: string;
+}
+
 export interface DashboardStats {
   openInvoice: number;
   closedInvoice: number;
   totalLimit: number;
   usedLimit: number;
-  monthlyTrend: { month: string; amount: number }[];
+  upcomingMaturities: number; 
+  monthlyTrend: { month: string; amount: number; average: number }[];
+  financialHealth: FinancialHealth;
 }
 
 export interface NewsArticle {
   title: string;
   url: string;
   source?: string;
+}
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  passwordHash?: string; // Stored locally
 }

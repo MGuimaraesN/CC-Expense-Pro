@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CreditCard } from '../types';
 import { Skeleton } from './ui/Skeleton';
-import { Plus, Wifi, Edit2 } from 'lucide-react';
+import { Plus, Wifi, Edit2, ThumbsUp } from 'lucide-react';
 import { CardForm } from './CardForm';
 
 interface CardsViewProps {
@@ -22,6 +22,12 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess 
   const handleClose = () => {
     setShowCardModal(false);
     setEditingCard(null);
+  };
+
+  const isBestDayToBuy = (closingDay: number) => {
+    const today = new Date().getDate();
+    // Simple logic: If today is closing day, it's the best day (next invoice is far)
+    return today === closingDay;
   };
 
   if (loading) {
@@ -53,6 +59,13 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess 
             key={card.id} 
             className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-xl transition-transform hover:-translate-y-1 group ${card.color || 'bg-slate-800'}`}
           >
+            {/* Best Buy Day Badge */}
+            {isBestDayToBuy(card.closingDay) && (
+              <div className="absolute top-0 left-0 bg-emerald-500 text-white text-[10px] font-bold px-3 py-1 rounded-br-lg shadow-lg z-20 flex items-center gap-1">
+                 <ThumbsUp size={10} /> BEST DAY TO BUY
+              </div>
+            )}
+
             {/* Background Decor */}
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl" />
             <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-black opacity-10 rounded-full blur-2xl" />
@@ -69,7 +82,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess 
             </div>
 
             <div className="relative z-10 flex flex-col h-48 justify-between pointer-events-none">
-              <div className="flex justify-between items-start">
+              <div className="flex justify-between items-start mt-4">
                 <div>
                   <h3 className="font-bold text-lg tracking-wide">{card.name}</h3>
                   <p className="text-xs opacity-75">Credit Card</p>
