@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { TransactionTable } from './TransactionTable';
 import { Transaction, CreditCard, TransactionType, TransactionStatus } from '../types';
-import { Search, Filter, AlertCircle, Calendar, Tag as TagIcon, Check, ArrowUpCircle, ArrowDownCircle, Wallet } from 'lucide-react';
+import { Search, Filter, AlertCircle, Calendar, Tag as TagIcon, Check, ArrowUpCircle, ArrowDownCircle, Wallet, FileText, Sheet, Download } from 'lucide-react';
 import { TransactionForm } from './TransactionForm';
 import { useUpdateTransaction } from '../hooks/useTransactions';
+import { exportToPDF, exportToExcel } from '../services/exportService';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -101,6 +102,24 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
 
   const netBalance = summary.income - summary.expense;
 
+  const handleExportPDF = () => {
+    if (filteredTransactions.length === 0) {
+      if (showToast) showToast('No data to export', 'error');
+      return;
+    }
+    exportToPDF(filteredTransactions, cards);
+    if (showToast) showToast('PDF Exported Successfully', 'success');
+  };
+
+  const handleExportExcel = () => {
+    if (filteredTransactions.length === 0) {
+      if (showToast) showToast('No data to export', 'error');
+      return;
+    }
+    exportToExcel(filteredTransactions, cards);
+    if (showToast) showToast('Excel Exported Successfully', 'success');
+  };
+
   if (error) {
      return (
        <div className="p-6 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 flex items-start gap-3">
@@ -152,7 +171,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
       {/* Filter Bar */}
       <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 space-y-4">
         
-        {/* Row 1: Search and Type/Card */}
+        {/* Row 1: Search, Export buttons, and Type/Card */}
         <div className="flex flex-col xl:flex-row gap-4 justify-between">
           <div className="relative w-full xl:w-1/3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -166,9 +185,30 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
           </div>
           
           <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+             
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2 mr-2">
+              <button 
+                onClick={handleExportPDF}
+                title="Export to PDF"
+                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                 <FileText size={16} className="text-red-500" />
+                 <span className="hidden sm:inline">PDF</span>
+              </button>
+              <button 
+                onClick={handleExportExcel}
+                title="Export to Excel"
+                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                 <Sheet size={16} className="text-emerald-500" />
+                 <span className="hidden sm:inline">Excel</span>
+              </button>
+            </div>
+
              <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
                <Filter size={16} className="text-slate-500" />
-               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Filters:</span>
+               <span className="text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline">Filters:</span>
             </div>
             
             <select 
@@ -177,14 +217,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
               className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium cursor-pointer"
             >
                <option value="ALL">All Types</option>
-               <option value="EXPENSE">Expenses Only</option>
-               <option value="INCOME">Income Only</option>
+               <option value="EXPENSE">Expenses</option>
+               <option value="INCOME">Income</option>
             </select>
 
             <select 
               value={cardFilter}
               onChange={(e) => setCardFilter(e.target.value)}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium cursor-pointer"
+              className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium cursor-pointer max-w-[120px] truncate"
             >
                <option value="ALL">All Cards</option>
                {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
