@@ -1,0 +1,243 @@
+openapi: 3.0.0
+info:
+  title: CC-Expense-Pro API
+  version: 1.0.0
+  description: API de gerenciamento financeiro e controle de despesas de cartão de crédito.
+servers:
+  - url: http://localhost:3001/api # Assuming backend runs on 3001
+    description: Servidor de Desenvolvimento
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+    CreditCard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        last4Digits:
+          type: string
+        limit:
+          type: number
+        closingDay:
+          type: integer
+        dueDay:
+          type: integer
+    Transaction:
+      type: object
+      required:
+        - description
+        - amount
+        - type
+        - date
+        - category
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+          enum: [INCOME, EXPENSE]
+        date:
+          type: string
+          format: date-time
+        category:
+          type: string
+        isInstallment:
+          type: boolean
+          default: false
+        totalInstallments:
+          type: integer
+          description: Required if isInstallment is true.
+        isRecurring:
+          type: boolean
+          default: false
+        recurrenceFrequency:
+          type: string
+          enum: [MONTHLY, WEEKLY, YEARLY]
+        cardId:
+          type: string
+          format: uuid
+          nullable: true
+
+paths:
+  /auth/register:
+    post:
+      summary: Registra um novo usuário
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          description: E-mail já cadastrado
+
+  /auth/login:
+    post:
+      summary: Autentica um usuário
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login realizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        '401':
+          description: Credenciais inválidas
+
+  /transactions:
+    get:
+      summary: Lista transações com filtros
+      tags: [Transactions]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [INCOME, EXPENSE]
+      responses:
+        '200':
+          description: Lista de transações retornada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+    post:
+      summary: Cria uma nova transação (suporta parcelamento e recorrência)
+      tags: [Transactions]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transaction'
+      responses:
+        '201':
+          description: Transação criada com sucesso
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+
+  /cards:
+    get:
+      summary: Lista os cartões de crédito do usuário
+      tags: [Cards]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de cartões retornada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CreditCard'
+
+  /dashboard/stats:
+    get:
+      summary: Retorna estatísticas financeiras consolidadas
+      tags: [Dashboard]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Objeto com totais de faturas, limites e gráficos.
+
+  /news/search:
+    get:
+      summary: Busca por notícias financeiras usando a IA do Google
+      tags: [News]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+            description: O tópico a ser pesquisado
+      responses:
+        '200':
+          description: Lista de artigos de notícias retornada

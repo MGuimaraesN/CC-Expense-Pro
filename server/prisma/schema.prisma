@@ -1,0 +1,108 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  transactions Transaction[]
+  creditCards  CreditCard[]
+  budgets      Budget[]
+}
+
+model CreditCard {
+  id           String @id @default(uuid())
+  name         String
+  last4Digits  String
+  limit        Float
+  closingDay   Int
+  dueDay       Int
+  color        String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  description String
+  amount    Float
+  currency  Currency @default(BRL)
+  date      DateTime
+  type      TransactionType
+  status    TransactionStatus
+  category  String
+  tags      Json? // Using JSON to store an array of strings
+
+  // Relationships
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  creditCard CreditCard? @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  cardId     String?
+
+  // Installment Logic
+  isInstallment     Boolean @default(false)
+  installmentId     String? // Group ID for all parts
+  installmentNumber Int?    // Current part (e.g., 2)
+  totalInstallments Int?    // Total parts (e.g., 10)
+
+  // Recurrence Logic
+  isRecurring         Boolean              @default(false)
+  recurrenceFrequency RecurrenceFrequency?
+  recurrenceEndDate   DateTime?
+
+  @@index([userId])
+  @@index([cardId])
+}
+
+model Budget {
+  id       String @id @default(uuid())
+  category String
+  amount   Float
+  period   String @default("MONTHLY") // Simplified for now
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+}
+
+// Enums based on types.ts
+enum Currency {
+  BRL
+  USD
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+}
+
+enum TransactionStatus {
+  PAID
+  PENDING
+}
+
+enum RecurrenceFrequency {
+  MONTHLY
+  WEEKLY
+  YEARLY
+}
