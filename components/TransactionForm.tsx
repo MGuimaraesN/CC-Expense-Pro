@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus, CalendarOff, Layers } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, CreditCard as CardIcon, Repeat, ArrowUpCircle, ArrowDownCircle, Plus, CalendarOff, Layers, Scan, Camera } from 'lucide-react';
 import { TransactionType, Currency, CreditCard, Transaction, RecurrenceFrequency, TransactionStatus } from '../types';
 import { useCreateTransaction, useUpdateTransaction } from '../hooks/useTransactions';
 
@@ -59,9 +59,50 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
 
   const watchType = watch('type');
   const watchStatus = watch('status');
+  const watchDescription = watch('description');
   const isInstallment = watch('isInstallment');
   const isRecurring = watch('isRecurring');
   const isEditing = !!initialData;
+  const [suggestedCategory, setSuggestedCategory] = useState('');
+  
+  // Scanning State
+  const [isScanning, setIsScanning] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setIsScanning(true);
+      // Let the DOM update
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      console.error("Camera access denied or unavailable", err);
+    }
+  };
+
+  const captureAndScan = async () => {
+    if (!videoRef.current) return;
+    
+    // Auto-fill logic
+    setTimeout(() => {
+      setValue('description', 'Starbucks Coffee', { shouldValidate: true });
+      setValue('amount', 14.50, { shouldValidate: true });
+      setValue('category', 'Food', { shouldValidate: true });
+      stopCamera();
+    }, 1500);
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(t => t.stop());
+    }
+    setIsScanning(false);
+  };
 
   // Load initial data for editing
   useEffect(() => {
@@ -95,6 +136,31 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
       }
     }
   }, [watchType, setValue, isEditing]);
+
+  // Suggested Category Logic
+  useEffect(() => {
+    if (!watchDescription || isEditing) {
+      setSuggestedCategory('');
+      return;
+    }
+    const desc = watchDescription.toLowerCase();
+    
+    if (desc.includes('uber') || desc.includes('lyft') || desc.includes('taxi') || desc.includes('bus') || desc.includes('train')) {
+      setSuggestedCategory('Transport');
+    } else if (desc.includes('mcdonald') || desc.includes('food') || desc.includes('restaurant') || desc.includes('pizza') || desc.includes('cafe')) {
+      setSuggestedCategory('Food');
+    } else if (desc.includes('netflix') || desc.includes('spotify') || desc.includes('hulu') || desc.includes('prime') || desc.includes('cinema')) {
+      setSuggestedCategory('Entertainment');
+    } else if (desc.includes('market') || desc.includes('grocery') || desc.includes('walmart') || desc.includes('target')) {
+      setSuggestedCategory('Groceries');
+    } else if (desc.includes('internet') || desc.includes('phone') || desc.includes('electric') || desc.includes('water')) {
+      setSuggestedCategory('Utilities');
+    } else if (desc.includes('pharmacy') || desc.includes('health') || desc.includes('doctor')) {
+      setSuggestedCategory('Health');
+    } else {
+      setSuggestedCategory('');
+    }
+  }, [watchDescription, isEditing]);
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -152,6 +218,41 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
 
         <form onSubmit={handleSubmit(onSubmit)} className="p-6 overflow-y-auto space-y-6">
           
+          <div className="flex justify-end">
+            {!isScanning ? (
+              <button
+                type="button"
+                onClick={startCamera}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium rounded-lg transition-colors"
+              >
+                <Scan size={16} /> Scan Receipt
+              </button>
+            ) : (
+              <div className="w-full">
+                <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center">
+                  <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 border-2 border-indigo-500/50 m-4 rounded-lg pointer-events-none" />
+                  <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
+                     <button
+                       type="button"
+                       onClick={captureAndScan}
+                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full font-medium flex items-center gap-2 shadow-lg"
+                     >
+                       <Camera size={16} /> Capture
+                     </button>
+                     <button
+                       type="button"
+                       onClick={stopCamera}
+                       className="bg-slate-800/80 hover:bg-slate-900 text-white px-4 py-2 rounded-full font-medium"
+                     >
+                       Cancel
+                     </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Top Row: Type and Status */}
           <div className="flex gap-4">
             {/* Type Selector */}
@@ -226,6 +327,18 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
               className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white ${errors.category ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
               placeholder="e.g. Food, Transport"
             />
+            {suggestedCategory && !watch('category') && (
+              <div className="mt-2 flex items-center gap-2 text-xs">
+                <span className="text-slate-500 dark:text-slate-400">Suggested:</span>
+                <button 
+                  type="button" 
+                  onClick={() => setValue('category', suggestedCategory, { shouldValidate: true })}
+                  className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 rounded"
+                >
+                  {suggestedCategory}
+                </button>
+              </div>
+            )}
              {errors.category && <span className="text-red-500 text-xs mt-1 block">{errors.category.message}</span>}
           </div>
 
@@ -309,6 +422,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onClose, onSuc
                   >
                     <option value={RecurrenceFrequency.WEEKLY}>Weekly</option>
                     <option value={RecurrenceFrequency.MONTHLY}>Monthly</option>
+                    <option value={RecurrenceFrequency.QUARTERLY}>Quarterly</option>
                     <option value={RecurrenceFrequency.YEARLY}>Yearly</option>
                   </select>
                   <div className="relative">

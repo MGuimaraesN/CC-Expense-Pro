@@ -3,8 +3,9 @@ import { TransactionTable } from './TransactionTable';
 import { Transaction, CreditCard, TransactionType, TransactionStatus } from '../types';
 import { Search, Filter, AlertCircle, Calendar, Tag as TagIcon, Check, ArrowUpCircle, ArrowDownCircle, Wallet, FileText, Sheet, Download } from 'lucide-react';
 import { TransactionForm } from './TransactionForm';
+import { CommentsModal } from './CommentsModal';
 import { useUpdateTransaction } from '../hooks/useTransactions';
-import { exportToPDF, exportToExcel } from '../services/exportService';
+import { exportToPDF, exportToExcel, exportToCSV } from '../services/exportService';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -14,10 +15,10 @@ interface TransactionsViewProps {
   isDeleting?: boolean;
   error?: Error | null;
   showToast?: (msg: string, type: 'success' | 'error') => void;
+  globalSearchText?: string;
 }
 
-export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions, loading, cards, onDelete, isDeleting, error, showToast }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions, loading, cards, onDelete, isDeleting, error, showToast, globalSearchText = '' }) => {
   const [typeFilter, setTypeFilter] = useState<'ALL' | TransactionType>('ALL');
   const [cardFilter, setCardFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -28,19 +29,41 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
   
   // Edit State
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [commentingTransaction, setCommentingTransaction] = useState<Transaction | null>(null);
 
   const updateMutation = useUpdateTransaction({
     onSuccess: () => {
-      if (showToast) showToast('Transaction status updated', 'success');
+      if (showToast) showToast('Transaction updated', 'success');
     },
     onError: (err) => {
-      if (showToast) showToast(`Failed to update status: ${err.message}`, 'error');
+      if (showToast) showToast(`Failed to update: ${err.message}`, 'error');
     }
   });
 
   const handleStatusToggle = (t: Transaction) => {
     const newStatus = t.status === TransactionStatus.PAID ? TransactionStatus.PENDING : TransactionStatus.PAID;
     updateMutation.mutate({ id: t.id, status: newStatus });
+  };
+
+  const handlePinToggle = (t: Transaction) => {
+    updateMutation.mutate({ id: t.id, isPinned: !t.isPinned });
+  };
+
+  const handleBulkTagUpdate = (ids: string[], action: 'add' | 'remove', tag: string) => {
+    ids.forEach(id => {
+      const transaction = transactions.find(t => t.id === id);
+      if (transaction) {
+        let newTags = [...(transaction.tags || [])];
+        if (action === 'add' && !newTags.includes(tag)) {
+          newTags.push(tag);
+          updateMutation.mutate({ id, tags: newTags });
+        } else if (action === 'remove' && newTags.includes(tag)) {
+          newTags = newTags.filter(t => t !== tag);
+          updateMutation.mutate({ id, tags: newTags });
+        }
+      }
+    });
+    if (showToast) showToast('Bulk tag update initiated', 'success');
   };
 
   // Derive unique tags from transactions
@@ -57,9 +80,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
   };
 
   const filteredTransactions = transactions.filter(t => {
-    // Text Search
-    const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          t.category.toLowerCase().includes(searchTerm.toLowerCase());
+    // Text Search from Global
+    const matchesSearch = t.description.toLowerCase().includes(globalSearchText.toLowerCase()) || 
+                          t.category.toLowerCase().includes(globalSearchText.toLowerCase());
     
     // Dropdown Filters
     const matchesType = typeFilter === 'ALL' || t.type === typeFilter;
@@ -172,18 +195,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
       <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 space-y-4">
         
         {/* Row 1: Search, Export buttons, and Type/Card */}
-        <div className="flex flex-col xl:flex-row gap-4 justify-between">
-          <div className="relative w-full xl:w-1/3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search description..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all"
-            />
-          </div>
-          
+        <div className="flex flex-col xl:flex-row gap-4 justify-end">
           <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
              
             {/* Export Buttons */}
@@ -203,6 +215,20 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
               >
                  <Sheet size={16} className="text-emerald-500" />
                  <span className="hidden sm:inline">Excel</span>
+              </button>
+              <button 
+                onClick={() => {
+                  if (filteredTransactions.length === 0) {
+                     if (showToast) showToast('No data to export', 'error'); return;
+                  }
+                  exportToCSV(filteredTransactions, cards);
+                  if (showToast) showToast('CSV Exported Successfully', 'success');
+                }}
+                title="Export to CSV"
+                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                 <Download size={16} className="text-blue-500" />
+                 <span className="hidden sm:inline">CSV</span>
               </button>
             </div>
 
@@ -320,6 +346,9 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
         onDelete={onDelete}
         onEdit={(t) => setEditingTransaction(t)}
         onStatusToggle={handleStatusToggle}
+        onPinToggle={handlePinToggle}
+        onBulkTagUpdate={handleBulkTagUpdate}
+        onComment={(t) => setCommentingTransaction(t)}
         isDeleting={isDeleting}
       />
 
@@ -330,6 +359,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ transactions
           cards={cards}
           initialData={editingTransaction}
           availableTags={availableTags}
+        />
+      )}
+
+      {commentingTransaction && (
+        <CommentsModal 
+          transaction={commentingTransaction} 
+          onClose={() => setCommentingTransaction(null)} 
         />
       )}
     </div>

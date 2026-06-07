@@ -1,111 +1,25 @@
 import { Transaction, CreditCard, TransactionType, Currency, DashboardStats, Budget, BudgetUsage, RecurrenceFrequency, TransactionStatus, FinancialHealth } from '../types';
 
-// Mock Data Stores
-let MOCK_CARDS: CreditCard[] = [
-  { id: 'c1', name: 'Nubank Platinum', last4Digits: '4242', limit: 15000, closingDay: 5, dueDay: 12, color: 'bg-purple-600' },
-  { id: 'c2', name: 'XP Visa Infinite', last4Digits: '8811', limit: 50000, closingDay: 20, dueDay: 27, color: 'bg-slate-800' },
-];
+const API_BASE = '/api';
 
-const DEFAULT_TRANSACTIONS: Transaction[] = [
-  {
-    id: 't1',
-    description: 'AWS Infrastructure',
-    amount: 602.50, // Converted to BRL approx
-    currency: Currency.BRL,
-    originalAmount: 120.50,
-    originalCurrency: Currency.USD,
-    date: new Date().toISOString(),
-    type: TransactionType.EXPENSE,
-    status: TransactionStatus.PAID,
-    cardId: 'c2',
-    category: 'Infrastructure',
-    tags: ['Cloud', 'DevOps'],
-    isInstallment: false,
-    isRecurring: true,
-    recurrenceFrequency: RecurrenceFrequency.MONTHLY,
-  },
-  {
-    id: 't2',
-    description: 'MacBook Pro M3',
-    amount: 12000, 
-    currency: Currency.BRL,
-    date: new Date().toISOString(),
-    type: TransactionType.EXPENSE,
-    status: TransactionStatus.PENDING,
-    cardId: 'c1',
-    category: 'Equipment',
-    tags: ['Office'],
-    isInstallment: true,
-    installmentId: 'inst_1',
-    installmentNumber: 1,
-    totalInstallments: 10,
-    isRecurring: false,
-  },
-];
-
-const STORAGE_KEY_TRANSACTIONS = 'cc_expense_transactions';
-const STORAGE_KEY_EXCHANGE_RATE = 'cc_expense_rate_cache';
-
-const loadTransactions = (): Transaction[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_TRANSACTIONS);
-    return stored ? JSON.parse(stored) : DEFAULT_TRANSACTIONS;
-  } catch (error) {
-    console.warn("Failed to load transactions from storage", error);
-    return DEFAULT_TRANSACTIONS;
-  }
-};
-
-let MOCK_TRANSACTIONS: Transaction[] = loadTransactions();
-
-const saveTransactionsToStorage = () => {
-  try {
-    localStorage.setItem(STORAGE_KEY_TRANSACTIONS, JSON.stringify(MOCK_TRANSACTIONS));
-  } catch (error) {
-    console.error("Failed to save transactions to storage", error);
-  }
-};
-
-let MOCK_BUDGETS: Budget[] = [
-  { id: 'b1', category: 'Infrastructure', amount: 500, period: 'MONTHLY' },
-  { id: 'b2', category: 'Food', amount: 1200, period: 'MONTHLY' },
-];
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
-
-// --- CURRENCY LOGIC WITH CACHING ---
 export const getUSDRate = async (): Promise<number> => {
-  const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 Hours
-  
-  // Try Cache
-  const cached = localStorage.getItem(STORAGE_KEY_EXCHANGE_RATE);
-  if (cached) {
-    const { rate, timestamp } = JSON.parse(cached);
-    if (Date.now() - timestamp < CACHE_DURATION) {
-      return rate;
-    }
+  const CACHE_DURATION = 12 * 60 * 60 * 1000;
+  const stored = localStorage.getItem('cc_expense_rate_cache');
+  if (stored) {
+    const { rate, timestamp } = JSON.parse(stored);
+    if (Date.now() - timestamp < CACHE_DURATION) return rate;
   }
-
-  // Fetch New
   try {
     const res = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL');
     const data = await res.json();
     const rate = parseFloat(data.USDBRL.bid);
-    
-    // Save Cache
-    localStorage.setItem(STORAGE_KEY_EXCHANGE_RATE, JSON.stringify({
-      rate,
-      timestamp: Date.now()
-    }));
-    
+    localStorage.setItem('cc_expense_rate_cache', JSON.stringify({ rate, timestamp: Date.now() }));
     return rate;
   } catch (e) {
-    console.error("Failed to fetch exchange rate", e);
-    return 5.5; // Conservative Fallback
+    return 5.5;
   }
 };
 
-// --- SMART CATEGORIZATION ---
 const categorizeByDescription = (desc: string): string => {
   const d = desc.toLowerCase();
   if (d.includes('uber') || d.includes('99') || d.includes('posto') || d.includes('shell')) return 'Transport';
@@ -116,39 +30,35 @@ const categorizeByDescription = (desc: string): string => {
   return 'General';
 };
 
-// --- TRANSACTION LOGIC ---
-export const createTransaction = async (data: Partial<Transaction>): Promise<Transaction[]> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
+export const fetchTransactions = async (): Promise<Transaction[]> => {
+  const res = await fetch(`${API_BASE}/transactions`);
+  if (!res.ok) throw new Error('Failed to fetch transactions');
+  return res.json();
+};
 
+export const createTransaction = async (data: Partial<Transaction>): Promise<Transaction[]> => {
   let finalAmount = data.amount || 0;
   let exchangeRate = 1;
   
-  // Handle Currency Conversion
   if (data.currency === Currency.USD) {
     exchangeRate = await getUSDRate();
     finalAmount = Number((finalAmount * exchangeRate).toFixed(2));
-    
-    // Preserve Original Data
     data.originalAmount = data.amount;
     data.originalCurrency = Currency.USD;
     data.exchangeRate = exchangeRate;
-    
-    // Normalize system currency
     data.currency = Currency.BRL; 
   }
 
-  // Auto-categorize if empty
   if (!data.category || data.category === 'Uncategorized') {
     data.category = categorizeByDescription(data.description || '');
   }
 
-  const transactionsToCreate: Transaction[] = [];
   const baseDate = new Date(data.date || new Date());
-  const groupId = generateId();
-
   const defaultStatus = data.status || (data.type === TransactionType.INCOME ? TransactionStatus.PAID : TransactionStatus.PENDING);
+  const groupId = crypto.randomUUID();
 
-  // Installment Logic
+  const toCreate: Partial<Transaction>[] = [];
+
   if (data.isInstallment && data.totalInstallments && data.totalInstallments > 1 && data.type === TransactionType.EXPENSE) {
     const totalAmount = finalAmount;
     const partAmount = Number((totalAmount / data.totalInstallments).toFixed(2));
@@ -156,110 +66,91 @@ export const createTransaction = async (data: Partial<Transaction>): Promise<Tra
     const remainder = Number((totalAmount - totalCalculated).toFixed(2));
 
     const currentInstallment = data.installmentNumber || 1;
-    // Generate transactions from the current installment up to the total
     const countToGenerate = data.totalInstallments - currentInstallment + 1;
 
     for (let i = 0; i < countToGenerate; i++) {
-      const thisInstallmentNum = currentInstallment + i;
-      
-      const installmentDate = new Date(baseDate);
-      installmentDate.setMonth(baseDate.getMonth() + i);
+        const thisNum = currentInstallment + i;
+        const dDate = new Date(baseDate);
+        dDate.setMonth(baseDate.getMonth() + i);
+        const amount = (thisNum === 1) ? partAmount + remainder : partAmount;
 
-      // Only apply remainder to the very first installment of the plan (installment 1)
-      // If user starts adding from #3, we assume #1 carried the remainder or we just use partAmount.
-      // For simplicity, we add remainder to #1. If we are generating #1, add it.
-      const amount = (thisInstallmentNum === 1) ? partAmount + remainder : partAmount;
-
-      transactionsToCreate.push({
-        ...data,
-        id: generateId(),
-        amount: amount,
-        date: installmentDate.toISOString(),
-        installmentId: groupId,
-        installmentNumber: thisInstallmentNum,
-        totalInstallments: data.totalInstallments,
-        tags: data.tags || [],
-        status: i === 0 ? defaultStatus : TransactionStatus.PENDING, // First generated record uses form status
-      } as Transaction);
+        toCreate.push({
+            ...data,
+            amount,
+            date: dDate.toISOString(),
+            installmentId: groupId,
+            installmentNumber: thisNum,
+            totalInstallments: data.totalInstallments,
+            tags: data.tags || [],
+            status: i === 0 ? defaultStatus : TransactionStatus.PENDING
+        });
     }
   } else if (data.isRecurring) {
-    const recurrenceCount = 6; 
     const frequency = data.recurrenceFrequency || RecurrenceFrequency.MONTHLY;
-    
-    for (let i = 0; i < recurrenceCount; i++) {
-      const recurringDate = new Date(baseDate);
-      if (frequency === RecurrenceFrequency.MONTHLY) recurringDate.setMonth(baseDate.getMonth() + i);
-      else if (frequency === RecurrenceFrequency.WEEKLY) recurringDate.setDate(baseDate.getDate() + (i * 7));
-      else if (frequency === RecurrenceFrequency.YEARLY) recurringDate.setFullYear(baseDate.getFullYear() + i);
-      
-      if (data.recurrenceEndDate && recurringDate > new Date(data.recurrenceEndDate)) break;
+    const limit = 6;
+    for (let i = 0; i < limit; i++) {
+        const dDate = new Date(baseDate);
+        if (frequency === RecurrenceFrequency.MONTHLY) dDate.setMonth(baseDate.getMonth() + i);
+        else if (frequency === RecurrenceFrequency.WEEKLY) dDate.setDate(baseDate.getDate() + (i * 7));
+        else if (frequency === RecurrenceFrequency.QUARTERLY) dDate.setMonth(baseDate.getMonth() + (i * 3));
+        else if (frequency === RecurrenceFrequency.YEARLY) dDate.setFullYear(baseDate.getFullYear() + i);
 
-      transactionsToCreate.push({
-        ...data,
-        id: generateId(),
-        amount: finalAmount,
-        date: recurringDate.toISOString(),
-        tags: data.tags || [],
-        status: i === 0 ? defaultStatus : TransactionStatus.PENDING,
-      } as Transaction);
+        if (data.recurrenceEndDate && dDate > new Date(data.recurrenceEndDate)) break;
+
+        toCreate.push({
+            ...data,
+            amount: finalAmount,
+            date: dDate.toISOString(),
+            tags: data.tags || [],
+            status: i === 0 ? defaultStatus : TransactionStatus.PENDING
+        });
     }
   } else {
-    transactionsToCreate.push({
-      ...data,
-      id: generateId(),
-      amount: finalAmount,
-      tags: data.tags || [],
-      status: defaultStatus,
-    } as Transaction);
+    toCreate.push({ ...data, amount: finalAmount, tags: data.tags || [], status: defaultStatus });
   }
 
-  MOCK_TRANSACTIONS = [...transactionsToCreate, ...MOCK_TRANSACTIONS];
-  saveTransactionsToStorage();
-  
-  return transactionsToCreate;
+  const createdTxs: Transaction[] = [];
+  for (const tData of toCreate) {
+      const res = await fetch(`${API_BASE}/transactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tData)
+      });
+      if (res.ok) createdTxs.push(await res.json());
+  }
+  return createdTxs;
 };
 
 export const updateTransaction = async (data: Partial<Transaction>): Promise<Transaction> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  
-  const index = MOCK_TRANSACTIONS.findIndex(t => t.id === data.id);
-  if (index !== -1) {
-    MOCK_TRANSACTIONS[index] = { 
-      ...MOCK_TRANSACTIONS[index], 
-      ...data,
-      tags: data.tags || MOCK_TRANSACTIONS[index].tags 
-    };
-    saveTransactionsToStorage();
-    return MOCK_TRANSACTIONS[index];
-  }
-  throw new Error("Transaction not found");
-};
-
-export const fetchTransactions = async (): Promise<Transaction[]> => {
-  await new Promise((resolve) => setTimeout(resolve, 600)); 
-  return [...MOCK_TRANSACTIONS].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const res = await fetch(`${API_BASE}/transactions/${data.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error('Failed to update');
+  return res.json();
 };
 
 export const deleteTransaction = async (id: string): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 600)); 
-  MOCK_TRANSACTIONS = MOCK_TRANSACTIONS.filter(t => t.id !== id);
-  saveTransactionsToStorage();
+  const res = await fetch(`${API_BASE}/transactions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete');
 };
 
-// --- INTELLIGENT DASHBOARD STATS ---
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  
+  const txs = await fetchTransactions();
+  const profileRes = await fetch(`${API_BASE}/profile`);
+  const profile = profileRes.ok ? await profileRes.json() : {};
+  const threshold = profile?.highValueThreshold || 5000;
+
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
 
-  // Basic Stats
-  const openInvoice = MOCK_TRANSACTIONS
+  const openInvoice = txs
     .filter(t => t.type === TransactionType.EXPENSE && t.status === TransactionStatus.PENDING)
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const closedInvoice = MOCK_TRANSACTIONS
+  const closedInvoice = txs
     .filter(t => {
       const d = new Date(t.date);
       return t.type === TransactionType.EXPENSE && t.status === TransactionStatus.PAID && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -269,15 +160,14 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   const sevenDaysFromNow = new Date();
   sevenDaysFromNow.setDate(now.getDate() + 7);
   
-  const upcomingMaturities = MOCK_TRANSACTIONS
+  const upcomingMaturities = txs
     .filter(t => {
       const d = new Date(t.date);
       return t.type === TransactionType.EXPENSE && t.status === TransactionStatus.PENDING && d >= now && d <= sevenDaysFromNow;
     })
     .reduce((sum, t) => sum + t.amount, 0);
 
-  // --- Financial Health (3 Month Avg Logic) ---
-  const currentMonthTotal = MOCK_TRANSACTIONS
+  const currentMonthTotal = txs
     .filter(t => {
       const d = new Date(t.date);
       return t.type === TransactionType.EXPENSE && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -287,14 +177,13 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   let sumLast3Months = 0;
   let countMonths = 0;
   
-  // Look back 3 months (excluding current)
   for (let i = 1; i <= 3; i++) {
     const d = new Date();
     d.setMonth(currentMonth - i);
     const m = d.getMonth();
     const y = d.getFullYear();
     
-    const monthTotal = MOCK_TRANSACTIONS
+    const monthTotal = txs
       .filter(t => {
         const td = new Date(t.date);
         return t.type === TransactionType.EXPENSE && td.getMonth() === m && td.getFullYear() === y;
@@ -307,10 +196,8 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     }
   }
   
-  // Avoid division by zero, assume at least 1 month of history or 0
-  const avgLast3Months = countMonths > 0 ? sumLast3Months / countMonths : (sumLast3Months || currentMonthTotal); // Fallback to current if no history
+  const avgLast3Months = countMonths > 0 ? sumLast3Months / countMonths : (sumLast3Months || currentMonthTotal);
 
-  // Difference Calculation
   const diff = currentMonthTotal - avgLast3Months;
   const percentageDiff = avgLast3Months > 0 ? (diff / avgLast3Months) * 100 : 0;
   
@@ -336,7 +223,6 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     message: healthMessage
   };
 
-  // Monthly Trend Data
   const monthlyTrend = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date();
@@ -345,7 +231,7 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     const y = d.getFullYear();
     const monthName = d.toLocaleString('default', { month: 'short' });
     
-    const total = MOCK_TRANSACTIONS
+    const total = txs
       .filter(t => {
         const td = new Date(t.date);
         return t.type === TransactionType.EXPENSE && td.getMonth() === m && td.getFullYear() === y;
@@ -359,6 +245,13 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     });
   }
 
+  const recentHighValueTransactions = txs.filter(t => {
+    const d = new Date(t.date);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+    return t.type === TransactionType.EXPENSE && t.amount >= threshold && d >= thirtyDaysAgo;
+  });
+
   return {
     openInvoice,
     closedInvoice,
@@ -366,39 +259,48 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     usedLimit: openInvoice + closedInvoice,
     upcomingMaturities,
     monthlyTrend,
-    financialHealth: health
+    financialHealth: health,
+    recentHighValueTransactions
   };
 };
 
 export const fetchCards = async (): Promise<CreditCard[]> => {
-  return MOCK_CARDS;
+  const res = await fetch(`${API_BASE}/cards`);
+  if (!res.ok) throw new Error('Failed to fetch cards');
+  return res.json();
 };
 
 export const createCard = async (cardData: Omit<CreditCard, 'id'>): Promise<CreditCard> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  const newCard = { ...cardData, id: generateId() };
-  MOCK_CARDS = [...MOCK_CARDS, newCard];
-  return newCard;
+  const res = await fetch(`${API_BASE}/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cardData)
+  });
+  if (!res.ok) throw new Error('Failed to create card');
+  return res.json();
 };
 
 export const updateCard = async (cardData: CreditCard): Promise<CreditCard> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  const index = MOCK_CARDS.findIndex(c => c.id === cardData.id);
-  if (index !== -1) {
-    MOCK_CARDS[index] = cardData;
-    return cardData;
-  }
-  throw new Error("Card not found");
+  const res = await fetch(`${API_BASE}/cards/${cardData.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cardData)
+  });
+  if (!res.ok) throw new Error('Failed to update card');
+  return res.json();
 };
 
-// --- BUDGETS ---
 export const fetchBudgets = async (): Promise<BudgetUsage[]> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
+  const res = await fetch(`${API_BASE}/budgets`);
+  if (!res.ok) return [];
+  const budgets: Budget[] = await res.json();
+  const txs = await fetchTransactions();
+  
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
-  return MOCK_BUDGETS.map(budget => {
-    const spent = MOCK_TRANSACTIONS
+  return budgets.map(budget => {
+    const spent = txs
       .filter(t => {
         const d = new Date(t.date);
         return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === TransactionType.EXPENSE && t.category.toLowerCase() === budget.category.toLowerCase();
@@ -415,18 +317,20 @@ export const fetchBudgets = async (): Promise<BudgetUsage[]> => {
 };
 
 export const createBudget = async (budget: Partial<Budget>): Promise<Budget> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  const newBudget = { ...budget, id: generateId(), period: 'MONTHLY' } as Budget;
-  MOCK_BUDGETS.push(newBudget);
-  return newBudget;
+  const res = await fetch(`${API_BASE}/budgets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(budget)
+  });
+  if (!res.ok) throw new Error('Failed to create budget');
+  return res.json();
 };
 
 export const deleteBudget = async (id: string): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 600));
-  MOCK_BUDGETS = MOCK_BUDGETS.filter(b => b.id !== id);
+  const res = await fetch(`${API_BASE}/budgets/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete');
 };
 
-// --- IMPORTS ---
 export const parseOFX = (ofxContent: string): any[] => {
   const transactions: any[] = [];
   const bankTranListMatch = ofxContent.match(/<BANKTRANLIST>([\s\S]*?)<\/BANKTRANLIST>/);
@@ -449,7 +353,7 @@ export const parseOFX = (ofxContent: string): any[] => {
          date: dateStr,
          amount: parseFloat(amountMatch[1]),
          description: description,
-         category: categorizeByDescription(description), // Auto-Categorize
+         category: categorizeByDescription(description),
          type: parseFloat(amountMatch[1]) < 0 ? 'EXPENSE' : 'INCOME'
        });
      }
@@ -471,7 +375,6 @@ export const importTransactionsFromCSV = async (csvText: string): Promise<number
       const date = parts[0].trim();
       const desc = parts[1].trim();
       const amount = parseFloat(parts[2].trim());
-      // Use provided category or auto-detect
       const category = parts[3]?.trim() || categorizeByDescription(desc);
       
       if (!isNaN(amount) && desc) {

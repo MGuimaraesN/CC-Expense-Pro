@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model UserProfile {
+  id                   String  @id @default(uuid())
+  name                 String
+  email                String  @unique
+  avatarUrl            String
+  passwordHash         String?
+  twoFactorEnabled     Boolean @default(false)
+  highValueThreshold   Float?  @default(5000)
+  darkMode             Boolean?
+  autoBackupEnabled    Boolean @default(false)
+  dashboardLayout      String?
+}
+
+model CreditCard {
+  id          String   @id @default(uuid())
+  name        String
+  last4Digits String
+  limit       Float
+  closingDay  Int
+  dueDay      Int
+  color       String
+}
+
+model Transaction {
+  id                String   @id @default(uuid())
+  description       String
+  amount            Float
+  currency          String   @default("BRL")
+  originalAmount    Float?
+  originalCurrency  String?
+  exchangeRate      Float?
+  date              DateTime
+  type              String   // "EXPENSE" | "INCOME"
+  status            String   // "PAID" | "PENDING"
+  cardId            String?
+  category          String
+  tags              String   // Store as JSON string or comma-separated. Using JSON string for simplicity.
+  isInstallment     Boolean  @default(false)
+  installmentId     String?
+  installmentNumber Int?
+  totalInstallments Int?
+  isRecurring       Boolean  @default(false)
+  recurrenceFreq    String?
+  recurrenceEndDate DateTime?
+  isPinned          Boolean  @default(false)
+  
+  comments          Comment[]
+}
+
+model Comment {
+  id            String      @id @default(uuid())
+  text          String
+  author        String
+  timestamp     DateTime    @default(now())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+}
+
+model Budget {
+  id       String  @id @default(uuid())
+  category String
+  amount   Float
+  tags     String? // Comma-separated or JSON
+  period   String  @default("MONTHLY")
+}

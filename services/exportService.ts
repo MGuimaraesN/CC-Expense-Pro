@@ -116,3 +116,21 @@ export const exportToExcel = (transactions: Transaction[], cards: CreditCard[]) 
 
   XLSX.writeFile(workbook, `cc-expense-relatorio-${new Date().toISOString().split('T')[0]}.xlsx`);
 };
+
+export const exportToCSV = (transactions: Transaction[], cards: CreditCard[]) => {
+  const wsData = transactions.map(t => ({
+    'Data': formatDate(t.date),
+    'Descrição': t.description,
+    'Cartão': getCardName(t.cardId, cards),
+    'Categoria': t.category,
+    'Tipo': t.type,
+    'Status': t.status,
+    'Valor': t.type === TransactionType.INCOME ? t.amount : -t.amount,
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(wsData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Transações");
+
+  XLSX.writeFile(workbook, `cc-expense-relatorio-${new Date().toISOString().split('T')[0]}.csv`, { bookType: 'csv' });
+};

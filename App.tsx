@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, Newspaper, PieChart, Upload, Menu } from 'lucide-react';
+import { LayoutDashboard, Receipt, CreditCard, Settings, Plus, Sun, Moon, LogOut, X, Newspaper, PieChart, Upload, Menu, Search, Activity, RefreshCw, CheckCircle2, HelpCircle } from 'lucide-react';
+
 import { Dashboard } from './components/Dashboard';
 import { TransactionTable } from './components/TransactionTable';
 import { TransactionForm } from './components/TransactionForm';
@@ -11,11 +12,18 @@ import { BudgetView } from './components/BudgetView';
 import { ImportView } from './components/ImportView';
 import { LoginView } from './components/LoginView';
 import { UserManagementView } from './components/UserManagementView';
+import { MonthlyReportsView } from './components/MonthlyReportsView';
+import { SystemLogsView } from './components/SystemLogsView';
+import { RecurringBillsView } from './components/RecurringBillsView';
 import { useTransactions, useCards, useDashboardStats, useCreateTransaction, useDeleteTransaction } from './hooks/useTransactions';
-import { isAuthenticated, logout, getUserProfile } from './services/userService';
+import { isAuthenticated, logout, getUserProfile, updateUserProfile } from './services/userService';
 import { Toaster, toast } from 'sonner';
+import { monkeyPatchFetch } from './utils/apiLogger';
+import { useIsMutating } from '@tanstack/react-query';
 
-type ViewState = 'dashboard' | 'transactions' | 'cards' | 'budgets' | 'news' | 'import' | 'settings' | 'user';
+monkeyPatchFetch();
+
+type ViewState = 'dashboard' | 'transactions' | 'cards' | 'budgets' | 'recurring' | 'news' | 'import' | 'settings' | 'user' | 'reports' | 'logs';
 
 // Sidebar Item Component
 const NavItem: React.FC<{ 
@@ -35,11 +43,41 @@ const NavItem: React.FC<{
 
 const App: React.FC = () => {
   const [isAuth, setIsAuth] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false);
   const [showModal, setShowModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState(getUserProfile());
+  const [userProfile, setUserProfile] = useState<any>({ name: 'Loading', email: '' });
+  const [globalSearchText, setGlobalSearchText] = useState('');
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      
+      const key = e.key.toLowerCase();
+      if (key === 'n') {
+        e.preventDefault();
+        setShowModal(true);
+      } else if (key === '?') {
+        e.preventDefault();
+        setShowHelpModal(true);
+      } else if (key === 's') {
+        e.preventDefault();
+        setCurrentView('settings');
+      } else if (key === 'd') {
+        e.preventDefault();
+        setCurrentView('dashboard');
+      } else if (key === 't') {
+        e.preventDefault();
+        setCurrentView('transactions');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Check Auth on Mount & Fix F5 Refresh Logic
   useEffect(() => {
@@ -54,11 +92,30 @@ const App: React.FC = () => {
   // Update Profile when view changes (simple sync)
   useEffect(() => {
     if(currentView === 'dashboard' || currentView === 'user') {
-        setUserProfile(getUserProfile());
+        getUserProfile().then(profile => {
+          setUserProfile(profile);
+          if (profile.darkMode !== undefined && profile.darkMode !== null) {
+            setDarkMode(profile.darkMode);
+          }
+        }).catch(console.error);
     }
-  }, [currentView]);
+  }, [currentView, isAuth]);
+
+  // Toggle Dark Mode
+  const toggleDarkMode = async () => {
+    const newVal = !darkMode;
+    setDarkMode(newVal);
+    if (userProfile && userProfile.id) {
+       try {
+         await updateUserProfile({ ...userProfile, darkMode: newVal });
+       } catch (e) {
+         console.error('Failed to save profile theme preference');
+       }
+    }
+  };
 
   // Data State via React Query Hooks (only enabled if auth)
+  const isMutating = useIsMutating();
   const deleteMutation = useDeleteTransaction({
     onSuccess: () => toast.success('Transaction deleted successfully'),
     onError: () => toast.error('Failed to delete transaction'),
@@ -117,7 +174,7 @@ const App: React.FC = () => {
       case 'dashboard':
         return (
           <div className="space-y-8 animate-in fade-in duration-500">
-            <Dashboard stats={stats} isLoading={isLoading} />
+            <Dashboard stats={stats} isLoading={isLoading} transactions={transactions} />
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Recent Activity</h3>
@@ -146,6 +203,7 @@ const App: React.FC = () => {
             isDeleting={deleteMutation.isPending}
             error={isError ? error : null}
             showToast={(msg, type) => type === 'success' ? toast.success(msg) : toast.error(msg)}
+            globalSearchText={globalSearchText}
           />
         );
       case 'cards':
@@ -155,6 +213,26 @@ const App: React.FC = () => {
       case 'budgets':
         return (
           <BudgetView />
+        );
+      case 'recurring':
+        return (
+          <RecurringBillsView 
+            transactions={transactions} 
+            onUpdate={async (id, updates) => {
+              // we can re-use update logic
+              await fetch(`/api/transactions/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+              });
+              // We'd ideally invalidate query but re-fetching can take a second, 
+              // for now let's just trigger a toast in the component. The user needs to refresh or we can mutate local state.
+              // Actually since we use react-query we shouldn't mutate here directly, but the instructions only need partial update.
+              // Let's implement full invalidation.
+              const { queryClient } = await import('./index'); // Need query client to invalidate
+              queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            }}
+          />
         );
       case 'news':
         return (
@@ -167,6 +245,14 @@ const App: React.FC = () => {
       case 'settings':
         return (
           <SettingsView darkMode={darkMode} setDarkMode={setDarkMode} />
+        );
+      case 'reports':
+        return (
+          <MonthlyReportsView transactions={transactions} />
+        );
+      case 'logs':
+        return (
+          <SystemLogsView />
         );
       case 'user':
         return (
@@ -183,9 +269,12 @@ const App: React.FC = () => {
       case 'transactions': return 'All Transactions';
       case 'cards': return 'My Cards';
       case 'budgets': return 'Budget Management';
+      case 'recurring': return 'Recurring Bills';
       case 'news': return 'Market News';
+      case 'reports': return 'Monthly Reports';
       case 'import': return 'Import Data';
       case 'settings': return 'System Settings';
+      case 'logs': return 'System Logs';
       case 'user': return 'User Profile';
     }
   };
@@ -243,6 +332,18 @@ const App: React.FC = () => {
             label="Budgets" 
           />
           <NavItem 
+            onClick={() => handleNavClick('recurring')} 
+            active={currentView === 'recurring'} 
+            icon={<RefreshCw size={20} />} 
+            label="Recurring Bills" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('reports')} 
+            active={currentView === 'reports'} 
+            icon={<PieChart size={20} />} 
+            label="Monthly Reports" 
+          />
+          <NavItem 
             onClick={() => handleNavClick('news')} 
             active={currentView === 'news'} 
             icon={<Newspaper size={20} />} 
@@ -253,6 +354,12 @@ const App: React.FC = () => {
             active={currentView === 'import'} 
             icon={<Upload size={20} />} 
             label="Import Data" 
+          />
+          <NavItem 
+            onClick={() => handleNavClick('logs')} 
+            active={currentView === 'logs'} 
+            icon={<Activity size={20} />} 
+            label="System Logs" 
           />
           <NavItem 
             onClick={() => handleNavClick('settings')} 
@@ -320,19 +427,52 @@ const App: React.FC = () => {
                >
                  <Menu size={24} />
                </button>
-               <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{getHeaderTitle()}</h2>
+               <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate lg:w-48 xl:w-auto">{getHeaderTitle()}</h2>
             </div>
             
+            <div className="hidden md:block flex-1 max-w-md mx-6">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="text" 
+                  placeholder="Global Search (Merchant, Notes)..." 
+                  value={globalSearchText}
+                  onChange={(e) => {
+                    setGlobalSearchText(e.target.value);
+                    if (e.target.value && currentView !== 'transactions') {
+                      setCurrentView('transactions');
+                    }
+                  }}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm dark:text-white transition-all"
+                />
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 md:gap-4">
+              <div title={isMutating ? 'Syncing with database' : 'All changes saved to database'} className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${isMutating ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400' : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
+                {isMutating ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                {isMutating ? 'Syncing...' : 'Synced'}
+              </div>
+
               <button 
-                onClick={() => setDarkMode(!darkMode)}
+                onClick={toggleDarkMode}
                 className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                title="Toggle Theme"
               >
                 {darkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
               
               <button 
+                onClick={() => setShowHelpModal(true)}
+                className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                title="Keyboard Shortcuts (?)"
+              >
+                <HelpCircle size={20} />
+              </button>
+              
+              <button 
                 onClick={() => setShowModal(true)}
+                title="Add Expense (Shortcut: n)"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95"
               >
                 <Plus size={18} />
@@ -351,6 +491,24 @@ const App: React.FC = () => {
         </main>
 
         {/* Modals */}
+        {showHelpModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md shadow-2xl p-6 relative">
+              <button onClick={() => setShowHelpModal(false)} className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={20} />
+              </button>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Keyboard Shortcuts</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center"><span className="text-slate-600 dark:text-slate-300">New Transaction</span><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm font-mono text-slate-700 dark:text-slate-300">n</kbd></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 dark:text-slate-300">Go to Dashboard</span><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm font-mono text-slate-700 dark:text-slate-300">d</kbd></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 dark:text-slate-300">Go to Transactions</span><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm font-mono text-slate-700 dark:text-slate-300">t</kbd></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 dark:text-slate-300">Go to Settings</span><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm font-mono text-slate-700 dark:text-slate-300">s</kbd></div>
+                <div className="flex justify-between items-center"><span className="text-slate-600 dark:text-slate-300">Show Shortcuts</span><kbd className="px-2 py-1 bg-slate-100 dark:bg-slate-800 border dark:border-slate-700 rounded-md text-sm font-mono text-slate-700 dark:text-slate-300">?</kbd></div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showModal && (
           <TransactionForm 
             onClose={() => setShowModal(false)} 

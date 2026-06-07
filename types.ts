@@ -18,6 +18,14 @@ export enum RecurrenceFrequency {
   MONTHLY = 'MONTHLY',
   WEEKLY = 'WEEKLY',
   YEARLY = 'YEARLY',
+  QUARTERLY = 'QUARTERLY'
+}
+
+export interface Comment {
+  id: string;
+  text: string;
+  author: string;
+  timestamp: string;
 }
 
 export interface CreditCard {
@@ -64,6 +72,8 @@ export interface Transaction {
   isRecurring: boolean;
   recurrenceFrequency?: RecurrenceFrequency;
   recurrenceEndDate?: string;
+  isPinned?: boolean;
+  comments?: Comment[];
 }
 
 export interface Budget {
@@ -96,6 +106,7 @@ export interface DashboardStats {
   upcomingMaturities: number; 
   monthlyTrend: { month: string; amount: number; average: number }[];
   financialHealth: FinancialHealth;
+  recentHighValueTransactions: Transaction[];
 }
 
 export interface NewsArticle {
@@ -109,4 +120,6 @@ export interface UserProfile {
   email: string;
   avatarUrl: string;
   passwordHash?: string; // Stored locally
+  twoFactorEnabled?: boolean;
+  highValueThreshold?: number;
 }
