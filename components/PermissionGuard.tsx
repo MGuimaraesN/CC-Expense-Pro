@@ -6,15 +6,17 @@ interface PermissionGuardProps {
   allowedRoles?: string[];
   requireAdmin?: boolean;
   requireSuperAdmin?: boolean;
+  requirePermission?: string;
 }
 
 export const PermissionGuard: FC<PermissionGuardProps> = ({ 
   children, 
   allowedRoles, 
   requireAdmin, 
-  requireSuperAdmin 
+  requireSuperAdmin,
+  requirePermission
 }) => {
-  const { hasRole, isAdmin, isSuperAdmin, user } = usePermissions();
+  const { hasRole, hasPermission, isAdmin, isSuperAdmin, user } = usePermissions();
 
   if (!user) {
     return null; // Or a loading spinner if preferred
@@ -25,6 +27,10 @@ export const PermissionGuard: FC<PermissionGuardProps> = ({
   }
 
   if (requireAdmin && !isAdmin) {
+    return null;
+  }
+
+  if (requirePermission && !hasPermission(requirePermission)) {
     return null;
   }
 

@@ -1,64 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { Transaction, TransactionStatus } from '../types';
+import React, { useState } from 'react';
 import { Repeat, CheckCircle, SkipForward, Edit2, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '../services/apiClient';
 
-interface RecurringBillsViewProps {
-  transactions: Transaction[];
-  onUpdate: (id: string, updates: Partial<Transaction>) => Promise<void>;
-}
-
-export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transactions, onUpdate }) => {
-  const recurring = transactions.filter(t => t.isRecurring);
+export const RecurringBillsView: React.FC = () => {
+  const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFreq, setEditFreq] = useState('');
   const [editDate, setEditDate] = useState('');
 
-  const startEditing = (t: Transaction) => {
+  const { data: recurring = [], isLoading } = useQuery({
+    queryKey: ['recurring-rules'],
+    queryFn: () => apiClient('/recurring-rules')
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string, updates: any }) => apiClient(`/recurring-rules/${data.id}`, { method: 'PUT', body: JSON.stringify(data.updates) }),
+    onSuccess: () => {
+       queryClient.invalidateQueries({ queryKey: ['recurring-rules'] });
+       toast.success('Recurring bill updated');
+       setEditingId(null);
+    },
+    onError: () => toast.error('Failed to update bill')
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: (id: string) => apiClient(`/recurring-rules/${id}/generate-next`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      toast.success('Generated next transaction!');
+    },
+    onError: () => toast.error('Failed to generate transaction')
+  });
+
+  const startEditing = (t: any) => {
     setEditingId(t.id);
-    setEditFreq(t.recurrenceFrequency || 'MONTHLY');
-    setEditDate(new Date(t.date).toISOString().split('T')[0]);
+    setEditFreq(t.frequency || 'MONTHLY');
+    setEditDate(new Date(t.nextDate).toISOString().split('T')[0]);
   };
 
-  const saveEdit = async (t: Transaction) => {
-    try {
-      await onUpdate(t.id, { 
-        recurrenceFrequency: editFreq as any, 
-        date: new Date(editDate).toISOString() 
-      });
-      setEditingId(null);
-      toast.success('Recurring bill updated');
-    } catch {
-      toast.error('Failed to update bill');
-    }
+  const saveEdit = (t: any) => {
+    updateMutation.mutate({ id: t.id, updates: {
+       frequency: editFreq,
+       nextDate: new Date(editDate).toISOString()
+    }});
   };
 
-  const markAsPaid = async (t: Transaction) => {
-    try {
-      // Create a duplicate paid transaction and update the recur date, or simply mark paid.
-      // Usually marking as paid on a recurring template creates a new actual transaction and shifts the template date.
-      // For simplicity, we just mark this instance as PAID.
-      await onUpdate(t.id, { status: TransactionStatus.PAID });
-      toast.success('Marked as paid');
-    } catch {
-      toast.error('Failed to mark as paid');
-    }
+  const skipNext = (t: any) => {
+    const nextDate = new Date(t.nextDate);
+    if (t.frequency === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
+    else if (t.frequency === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
+    else nextDate.setMonth(nextDate.getMonth() + 1);
+    updateMutation.mutate({ id: t.id, updates: { nextDate: nextDate.toISOString() }});
+    toast.success('Skipped until next instance');
   };
 
-  const skipNext = async (t: Transaction) => {
-    try {
-      // Shift date by recurrence frequency
-      const nextDate = new Date(t.date);
-      if (t.recurrenceFrequency === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
-      else if (t.recurrenceFrequency === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
-      else nextDate.setMonth(nextDate.getMonth() + 1); // default Monthly
-
-      await onUpdate(t.id, { date: nextDate.toISOString() });
-      toast.success('Skipped until next instance');
-    } catch {
-      toast.error('Failed to skip bill');
-    }
-  };
+  if (isLoading) return <div className="p-12 text-center text-slate-500">Loading recurring rules...</div>;
 
   if (recurring.length === 0) {
     return (
@@ -67,7 +66,7 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
           <Repeat size={32} className="text-slate-400 dark:text-slate-500" />
         </div>
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">No active recurring bills</h3>
-        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6">When you create a transaction and flag it as recurring, it will appear here for easy management.</p>
+        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6">Create a recurring rule to easily manage your subscriptions and regular expenses.</p>
       </div>
     );
   }
@@ -78,19 +77,21 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Recurring Bills Management</h3>
       </div>
       <div className="divide-y divide-slate-100 dark:divide-slate-700">
-        {recurring.map(t => (
+        {recurring.map((t: any) => (
           <div key={t.id} className="p-6 flex flex-col md:flex-row items-center justify-between gap-4 group">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                  <h4 className="font-semibold text-slate-900 dark:text-white">{t.description}</h4>
-                 <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${t.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {t.status}
+                 <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${t.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                    {t.isActive ? 'ACTIVE' : 'INACTIVE'}
                  </span>
               </div>
               <div className="flex items-center gap-3 text-sm text-slate-500">
-                <span className="flex items-center gap-1 font-medium"><Repeat size={14} /> {t.recurrenceFrequency?.toUpperCase() || 'MONTHLY'}</span>
-                <span className="flex items-center gap-1 text-slate-400"><Clock size={14} /> Next: {new Date(t.date).toLocaleDateString()}</span>
-                <strong className="text-slate-900 dark:text-white">R$ {t.amount}</strong>
+                <span className="flex items-center gap-1 font-medium"><Repeat size={14} /> {t.frequency}</span>
+                <span className="flex items-center gap-1 text-slate-400"><Clock size={14} /> Next: {new Date(t.nextDate).toLocaleDateString()}</span>
+                <strong className={t.type === 'EXPENSE' ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'}>
+                  {t.type === 'INCOME' ? '+' : '-'} R$ {t.amount}
+                </strong>
               </div>
             </div>
             
@@ -122,11 +123,9 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
                   <button onClick={() => skipNext(t)} className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg" title="Skip this instance">
                     <SkipForward size={18} />
                   </button>
-                  {t.status !== 'PAID' && (
-                    <button onClick={() => markAsPaid(t)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg" title="Mark Paid">
-                      <CheckCircle size={18} />
-                    </button>
-                  )}
+                  <button onClick={() => generateMutation.mutate(t.id)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg" title="Generate next transaction">
+                     <CheckCircle size={18} />
+                  </button>
                </div>
             )}
           </div>

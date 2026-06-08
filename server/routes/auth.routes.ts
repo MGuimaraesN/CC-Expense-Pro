@@ -8,7 +8,14 @@ import { logAuditAction } from '../services/auditService';
 import { prisma } from '../services/prisma';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me';
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is required in production');
+  }
+  return process.env.JWT_SECRET || 'dev-only-secret';
+}
+
+const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 router.post('/login', validateBody(loginSchema), async (req: Request, res: Response) => {

@@ -19,10 +19,7 @@ import { PermissionGuard } from './components/PermissionGuard';
 import { useTransactions, useCards, useDashboardStats, useCreateTransaction, useDeleteTransaction } from './hooks/useTransactions';
 import { isAuthenticated, logout, getUserProfile, updateUserProfile } from './services/userService';
 import { Toaster, toast } from 'sonner';
-import { monkeyPatchFetch } from './utils/apiLogger';
 import { useIsMutating } from '@tanstack/react-query';
-
-monkeyPatchFetch();
 
 type ViewState = 'dashboard' | 'transactions' | 'cards' | 'budgets' | 'recurring' | 'news' | 'import' | 'settings' | 'user' | 'reports' | 'logs';
 
@@ -99,7 +96,7 @@ const App: React.FC = () => {
 
   // Update Profile when view changes (simple sync)
   useEffect(() => {
-    if(currentView === 'dashboard' || currentView === 'user') {
+    if ((currentView === 'dashboard' || currentView === 'user') && isAuth) {
         getUserProfile().then(profile => {
           setUserProfile(profile);
           if (profile.darkMode !== undefined && profile.darkMode !== null) {
@@ -129,9 +126,9 @@ const App: React.FC = () => {
     onError: () => toast.error('Failed to delete transaction'),
   });
 
-  const { data: transactions = [], isLoading: loadingTransactions, isError, error } = useTransactions();
-  const { data: stats = null, isLoading: loadingStats } = useDashboardStats();
-  const { data: cards = [], isLoading: loadingCards } = useCards();
+  const { data: transactions = [], isLoading: loadingTransactions, isError, error } = useTransactions(isAuth);
+  const { data: stats = null, isLoading: loadingStats } = useDashboardStats(isAuth);
+  const { data: cards = [], isLoading: loadingCards } = useCards(isAuth);
   
   const isLoading = loadingTransactions || loadingStats || loadingCards;
 
@@ -226,23 +223,7 @@ const App: React.FC = () => {
         );
       case 'recurring':
         return (
-          <RecurringBillsView 
-            transactions={transactions} 
-            onUpdate={async (id, updates) => {
-              // we can re-use update logic
-              await fetch(`/api/transactions/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updates)
-              });
-              // We'd ideally invalidate query but re-fetching can take a second, 
-              // for now let's just trigger a toast in the component. The user needs to refresh or we can mutate local state.
-              // Actually since we use react-query we shouldn't mutate here directly, but the instructions only need partial update.
-              // Let's implement full invalidation.
-              const { queryClient } = await import('./index'); // Need query client to invalidate
-              queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            }}
-          />
+          <RecurringBillsView />
         );
       case 'news':
         return (

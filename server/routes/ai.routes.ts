@@ -1,17 +1,29 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/requireAuth';
+import { validateBody } from '../middlewares/validate';
+import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
+import { prisma } from '../services/prisma';
 
 const router = Router();
 
-router.post('/financial-insights', requireAuth, async (req, res) => {
+const aiSchema = z.object({
+  query: z.string().min(1).max(500)
+});
+
+router.post('/financial-insights', requireAuth, validateBody(aiSchema), async (req: any, res: any) => {
    try {
      const { query } = req.body;
      const apiKey = process.env.GEMINI_API_KEY;
      
+     // Log action for AI usage
+     await prisma.auditLog.create({
+        data: { tenantId: req.user.tenantId, userId: req.user.id, action: 'USE_AI_INSIGHTS', entity: 'System', metadata: JSON.stringify({ query }) }
+     });
+
      if (!apiKey) {
-       return res.status(500).json({ 
-         text: "API Key is missing. Please configure your environment to use AI features.", 
+       return res.status(503).json({ 
+         text: "AI capabilities are temporarily disabled due to missing configuration.", 
          articles: [] 
        });
      }
@@ -34,11 +46,11 @@ router.post('/financial-insights', requireAuth, async (req, res) => {
 
      if (groundingChunks) {
        groundingChunks.forEach((chunk: any) => {
-         if (chunk.web) {
+         if (chunk.web && chunk.web.uri) {
             articles.push({
               title: chunk.web.title || "News Article",
               url: chunk.web.uri,
-              source: chunk.web.source || new URL(chunk.web.uri).hostname,
+              source: new URL(chunk.web.uri).hostname,
             });
          }
        });

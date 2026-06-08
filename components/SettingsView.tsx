@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Moon, Shield, Globe, Monitor, Database, Download, Upload, AlertTriangle, Cpu, RefreshCw, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 import { getUserProfile, updateUserProfile } from '../services/userService';
+import { apiClient } from '../services/apiClient';
 import { toast } from 'sonner';
 
 interface SettingsViewProps {
@@ -20,7 +21,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
       if (p) {
         setAutoBackupEnabled(p.autoBackupEnabled);
       }
-    });
+    }).catch(() => {});
   }, []);
 
   const toggleAutoBackup = async () => {
@@ -39,12 +40,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
     if (!cleanupDate) return toast.error('Select a date first');
     if (!confirm('Are you sure you want to permanently delete these transactions?')) return;
     try {
-      const res = await fetch('/api/transactions/cleanup', {
-        method: 'DELETE',
+      const data = await apiClient('/maintenance/transactions/cleanup', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ beforeDate: cleanupDate })
       });
-      const data = await res.json();
       if (data.success) {
         toast.success(`Deleted ${data.count} old transactions.`);
       } else {
@@ -59,8 +59,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
     setLoadingDiag(true);
     setDiagnosticInfo(null);
     try {
-      const res = await fetch('/api/diagnostics');
-      const data = await res.json();
+      const data = await apiClient('/diagnostics');
       setDiagnosticInfo(data);
     } catch (e: any) {
       setDiagnosticInfo({ status: 'error', error: e.message || 'Network error' });
@@ -192,9 +191,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
                <p className="text-sm text-slate-500 dark:text-slate-400">Download all your data as an SQLite database file export.</p>
              </div>
              <button 
-               onClick={() => {
-                 window.open('/api/backup/export', '_blank');
-                 toast.success('SQLite Database download started');
+               onClick={async () => {
+                 try {
+                   const token = localStorage.getItem('cc_expense_auth_token');
+                   const res = await fetch('/api/backup/export', {
+                     headers: { 'Authorization': `Bearer ${token}` }
+                   });
+                   if (!res.ok) throw new Error('Failed to export');
+                   const blob = await res.blob();
+                   const url = window.URL.createObjectURL(blob);
+                   const a = document.createElement('a');
+                   a.href = url;
+                   a.download = 'backup.json';
+                   document.body.appendChild(a);
+                   a.click();
+                   a.remove();
+                   window.URL.revokeObjectURL(url);
+                   toast.success('Database download started');
+                 } catch (e) {
+                   toast.error('Export failed. Check permissions.');
+                 }
                }}
                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors"
              >

@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthRequest } from '../middlewares/requireAuth';
+import { requirePermission } from '../middlewares/permissions';
 import { validateBody } from '../middlewares/validate';
 import { z } from 'zod';
 import { logAuditAction } from '../services/auditService';
@@ -29,7 +30,7 @@ const txSchema = z.object({
   isPinned: z.boolean().optional()
 });
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', requirePermission('transactions.view'), async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 100;
   
@@ -53,7 +54,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   res.json(formatted);
 });
 
-router.post('/', validateBody(txSchema), async (req: AuthRequest, res: Response) => {
+router.post('/', requirePermission('transactions.create'), validateBody(txSchema), async (req: AuthRequest, res: Response) => {
    const data = req.body;
    try {
      const tx = await prisma.transaction.create({
@@ -94,7 +95,7 @@ router.post('/', validateBody(txSchema), async (req: AuthRequest, res: Response)
    }
 });
 
-router.put('/:id', validateBody(txSchema.partial()), async (req: AuthRequest, res: Response) => {
+router.put('/:id', requirePermission('transactions.update'), validateBody(txSchema.partial()), async (req: AuthRequest, res: Response) => {
    const data = req.body;
    try {
      const txInfo = await prisma.transaction.findFirst({ where: { id: String(req.params.id), tenantId: req.user!.tenantId }});
@@ -128,7 +129,7 @@ router.put('/:id', validateBody(txSchema.partial()), async (req: AuthRequest, re
    }
 });
 
-router.delete('/:id', async (req: AuthRequest, res: Response) => {
+router.delete('/:id', requirePermission('transactions.delete'), async (req: AuthRequest, res: Response) => {
    const txInfo = await prisma.transaction.findFirst({ where: { id: String(req.params.id), tenantId: req.user!.tenantId }});
    if (!txInfo) return res.status(404).json({ error: 'Transaction not found' });
 

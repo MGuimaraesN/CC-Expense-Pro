@@ -1,12 +1,13 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthRequest } from '../middlewares/requireAuth';
+import { requirePermission } from '../middlewares/permissions';
 import { prisma } from '../services/prisma';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/summary', async (req: AuthRequest, res: Response) => {
+router.get('/summary', requirePermission('dashboard.view'), async (req: AuthRequest, res: Response) => {
   const tenantId = req.user!.tenantId;
 
   const now = new Date();
@@ -15,12 +16,12 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
   // Total Income and Expense for current month
   const incomeAggr = await prisma.transaction.aggregate({
     _sum: { amount: true },
-    where: { tenantId, type: 'INCOME', date: { gte: firstDayOfMonth }, deletedAt: null }
+    where: { tenantId, type: 'INCOME', date: { gte: firstDayOfMonth }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } }
   });
 
   const expenseAggr = await prisma.transaction.aggregate({
     _sum: { amount: true },
-    where: { tenantId, type: 'EXPENSE', date: { gte: firstDayOfMonth }, deletedAt: null }
+    where: { tenantId, type: 'EXPENSE', date: { gte: firstDayOfMonth }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } }
   });
 
   const totalIncome = incomeAggr._sum.amount || 0;
@@ -33,9 +34,10 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
   
   for (const card of cards) {
       totalLimit += card.limit;
+      // Should calculate based on invoice period here, simplistic approach for now
       const cardExpense = await prisma.transaction.aggregate({
         _sum: { amount: true },
-        where: { tenantId, cardId: card.id, type: 'EXPENSE', deletedAt: null } // simplified logic
+        where: { tenantId, cardId: card.id, type: 'EXPENSE', deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } }
       });
       usedLimit += (cardExpense._sum.amount || 0);
   }
@@ -49,27 +51,44 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
      
      const moExp = await prisma.transaction.aggregate({
         _sum: { amount: true },
-        where: { tenantId, type: 'EXPENSE', date: { gte: monthDate, lt: nextMonth }, deletedAt: null }
+        where: { tenantId, type: 'EXPENSE', date: { gte: monthDate, lt: nextMonth }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } }
      });
-     monthlyTrend.push({ month: monthStr, amount: moExp._sum.amount || 0, average: 0 }); // We can calculate real average if needed
+     monthlyTrend.push({ month: monthStr, amount: moExp._sum.amount || 0, average: 0 }); 
   }
 
-  // Calculate moving average
-  const histAvgObj = await prisma.transaction.aggregate({
+  // Calculate 3-month average for financial health
+  const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+  const avgAggr = await prisma.transaction.aggregate({
      _sum: { amount: true },
-     _count: { id: true },
-     where: { tenantId, type: 'EXPENSE', deletedAt: null },
+     where: { tenantId, type: 'EXPENSE', date: { gte: threeMonthsAgo, lt: firstDayOfMonth }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } }
   });
-  // a simplistic average
-  const avg = histAvgObj._count.id > 0 ? (histAvgObj._sum.amount || 0) / 6 : 0; 
+  
+  const averageLast3Months = (avgAggr._sum.amount || 0) / 3;
 
-  monthlyTrend.forEach(t => t.average = avg);
+  monthlyTrend.forEach(t => t.average = averageLast3Months);
+
+  let healthStatus: 'HEALTHY' | 'WARNING' | 'DANGER' = 'HEALTHY';
+  let percentageDiff = 0;
+  let healthMessage = 'Spending is aligned with your average.';
+
+  if (averageLast3Months > 0) {
+      percentageDiff = ((totalExpense - averageLast3Months) / averageLast3Months) * 100;
+      if (percentageDiff > 20) {
+          healthStatus = 'DANGER';
+          healthMessage = `Warning: Spending is ${percentageDiff.toFixed(0)}% above your recent average.`;
+      } else if (percentageDiff > 5) {
+          healthStatus = 'WARNING';
+          healthMessage = `Careful: Spending is ${percentageDiff.toFixed(0)}% higher than normal.`;
+      } else if (percentageDiff < -5) {
+          healthMessage = `Great! Spending is ${Math.abs(percentageDiff).toFixed(0)}% below your recent average.`;
+      }
+  }
 
   // Limit per category
   const expensesByCategoryRaw = await prisma.transaction.groupBy({
      by: ['category'],
      _sum: { amount: true },
-     where: { tenantId, type: 'EXPENSE', date: { gte: firstDayOfMonth }, deletedAt: null },
+     where: { tenantId, type: 'EXPENSE', date: { gte: firstDayOfMonth }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } },
   });
 
   const expensesByCategory = expensesByCategoryRaw.map(e => ({ name: e.category, value: e._sum.amount || 0 }));
@@ -77,20 +96,33 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
   // High value transactions
   const user = await prisma.user.findUnique({ where: { id: req.user!.id }});
   const recentHighValueTransactions = await prisma.transaction.findMany({
-     where: { tenantId, type: 'EXPENSE', amount: { gte: user?.highValueThreshold || 5000 }, deletedAt: null },
+     where: { tenantId, type: 'EXPENSE', amount: { gte: user?.highValueThreshold || 5000 }, deletedAt: null, status: { notIn: ['CANCELLED', 'FAILED'] } },
      orderBy: { date: 'desc' },
      take: 5
   });
 
+  // Upcoming Maturities
+  // We compute maturities dynamically taking RecurringRules or actual due bills.
+  const upcomingMaturities = await prisma.recurringRule.count({
+    where: { tenantId, isActive: true, nextDate: { lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) } }
+  });
+
   res.json({
-    monthlyTrend,
-    expensesByCategory,
     openInvoice: totalExpense,
-    upcomingMaturities: 0, // Mock
+    closedInvoice: 0,
+    upcomingMaturities,
     totalLimit,
     usedLimit,
-    financialHealth: { averageLast3Months: avg },
-    recentHighValueTransactions
+    monthlyTrend,
+    financialHealth: {
+       status: healthStatus,
+       currentMonthTotal: totalExpense,
+       averageLast3Months,
+       percentageDiff,
+       message: healthMessage
+    },
+    recentHighValueTransactions,
+    expensesByCategory
   });
 });
 

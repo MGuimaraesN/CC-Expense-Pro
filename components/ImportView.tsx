@@ -1,35 +1,55 @@
 import React, { useState } from 'react';
 import { Upload, FileText, Check, AlertCircle, FileCode } from 'lucide-react';
-import { importTransactionsFromCSV, importTransactionsFromOFX } from '../services/transactionService';
 import { useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '../services/apiClient';
 
 export const ImportView: React.FC = () => {
   const [content, setContent] = useState('');
   const [format, setFormat] = useState<'CSV' | 'OFX'>('CSV');
-  const [status, setStatus] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [status, setStatus] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS' | 'ERROR' | 'PREVIEW'>('IDLE');
   const [count, setCount] = useState(0);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [importResult, setImportResult] = useState<any>(null);
   const queryClient = useQueryClient();
 
-  const handleImport = async () => {
+  const handlePreview = async () => {
     if (!content.trim()) return;
     setStatus('PROCESSING');
     
     try {
-      let importedCount = 0;
-      if (format === 'CSV') {
-        importedCount = await importTransactionsFromCSV(content);
-      } else {
-        importedCount = await importTransactionsFromOFX(content);
-      }
-      setCount(importedCount);
-      setStatus('SUCCESS');
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      setContent('');
+      const data = await apiClient('/import/preview', {
+        method: 'POST',
+        body: JSON.stringify({ format, content })
+      });
+      setPreviewData(data);
+      setStatus('PREVIEW');
     } catch (e) {
       console.error(e);
       setStatus('ERROR');
     }
+  };
+
+  const handleCommit = async () => {
+     if (!previewData || !previewData.data) return;
+     setStatus('PROCESSING');
+
+     try {
+       const res = await apiClient('/import/commit', {
+          method: 'POST',
+          body: JSON.stringify({ transactions: previewData.data })
+       });
+       setImportResult(res);
+       setCount(res.imported);
+       setStatus('SUCCESS');
+       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+       queryClient.invalidateQueries({ queryKey: ['cards'] });
+       queryClient.invalidateQueries({ queryKey: ['budgets'] });
+       setContent('');
+     } catch (e) {
+       console.error(e);
+       setStatus('ERROR');
+     }
   };
 
   return (
@@ -65,27 +85,51 @@ export const ImportView: React.FC = () => {
         <div className="relative">
           <textarea
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              setContent(e.target.value);
+              setStatus('IDLE');
+              setPreviewData(null);
+            }}
             className="w-full h-48 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-sm dark:text-slate-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             placeholder={format === 'CSV' ? `2023-10-01, Uber Ride, -25.50, Transport` : `<OFX>...<BANKTRANLIST>...`}
           />
         </div>
 
-        <div className="mt-6 flex justify-center">
-          <button 
-            onClick={handleImport}
-            disabled={status === 'PROCESSING' || !content}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-             {status === 'PROCESSING' ? 'Processing...' : `Import ${format}`}
-          </button>
-        </div>
+        {status === 'PREVIEW' && previewData && (
+          <div className="mt-6 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-left">
+             <h3 className="text-lg font-semibold mb-2">Analysis Preview</h3>
+             <ul className="text-sm space-y-1 mb-4">
+                <li>Rows read: <strong>{previewData.read}</strong></li>
+                <li>Valid transactions: <strong>{previewData.normalized}</strong></li>
+                <li>Errors skipped: <strong>{previewData.errors}</strong></li>
+             </ul>
+             <p className="text-xs text-slate-500 mb-4">You are about to import {previewData.normalized} transactions. Duplicates will be ignored during commit.</p>
+             <div className="flex justify-end gap-3">
+               <button onClick={() => setStatus('IDLE')} className="px-4 py-2 border rounded-lg hover:bg-slate-50">Cancel</button>
+               <button onClick={handleCommit} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium shadow-lg shadow-indigo-500/30">Confirm & Import</button>
+             </div>
+          </div>
+        )}
+
+        {status !== 'PREVIEW' && (
+          <div className="mt-6 flex justify-center">
+            <button 
+              onClick={handlePreview}
+              disabled={status === 'PROCESSING' || !content}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+               {status === 'PROCESSING' ? 'Processing...' : `Preview ${format}`}
+            </button>
+          </div>
+        )}
       </div>
 
       {status === 'SUCCESS' && (
         <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4 rounded-xl flex items-center gap-3 text-emerald-700 dark:text-emerald-400">
           <Check size={20} />
-          <span className="font-medium">Successfully imported {count} transactions.</span>
+          <span className="font-medium">Successfully imported {count} transactions. 
+            {importResult?.ignored > 0 && ` (${importResult.ignored} duplicates ignored).`}
+          </span>
         </div>
       )}
 

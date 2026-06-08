@@ -5,6 +5,7 @@ import { DashboardStats, Transaction } from '../types';
 import { Skeleton } from './ui/Skeleton';
 import { toast } from 'sonner';
 import { getUserProfile, updateUserProfile } from '../services/userService';
+import { apiClient } from '../services/apiClient';
 
 interface DashboardProps {
   stats: DashboardStats | null;
@@ -50,7 +51,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, isLoading, transact
            setLayout(JSON.parse(p.dashboardLayout));
          } catch { }
        }
-    });
+    }).catch(() => {});
   }, []);
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -254,12 +255,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ stats, isLoading, transact
                  <button onClick={async () => {
                      toast.loading('Generating your report...', { id: 'summary-email' });
                      try {
-                        const res = await fetch('/api/summary/weekly', { method: 'POST' });
-                        const data = await res.json();
-                        if(data.success) toast.success(data.message, { id: 'summary-email' });
-                        else toast.error(data.error, { id: 'summary-email' });
-                     } catch(e) {
-                        toast.error('Failed to send summary report.', { id: 'summary-email' });
+                        const data = await apiClient('/summary/weekly', { method: 'POST' });
+                        if(data.success) toast.success(data.message || 'Report sent!', { id: 'summary-email' });
+                        else toast.error(data.error || 'Failed to send report', { id: 'summary-email' });
+                     } catch(e: any) {
+                        toast.error(e.message || 'Failed to send summary report.', { id: 'summary-email' });
                      }
                    }}
                    className="w-full flex items-center justify-start gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-indigo-50 dark:bg-slate-900/50 dark:hover:bg-indigo-900/20 group transition-all text-left block"

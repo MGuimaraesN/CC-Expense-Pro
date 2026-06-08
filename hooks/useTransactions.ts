@@ -7,12 +7,13 @@ interface MutationOptions {
   onError?: (error: Error) => void;
 }
 
-export const useTransactions = () => {
+export const useTransactions = (enabled = true) => {
   return useQuery({
     queryKey: ['transactions'],
     queryFn: fetchTransactions,
     staleTime: 1000 * 60 * 5, // 5 minutes (stale-while-revalidate)
     retry: 1, // Don't retry too many times for this demo
+    enabled,
   });
 };
 
@@ -61,10 +62,11 @@ export const useDeleteTransaction = (options?: MutationOptions) => {
   });
 };
 
-export const useCards = () => {
+export const useCards = (enabled = true) => {
   return useQuery({
     queryKey: ['cards'],
     queryFn: fetchCards,
+    enabled,
   });
 };
 
@@ -96,10 +98,11 @@ export const useUpdateCard = (options?: MutationOptions) => {
   });
 };
 
-export const useDashboardStats = () => {
+export const useDashboardStats = (enabled = true) => {
   return useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: fetchDashboardStats,
     staleTime: 1000 * 60 * 5,
+    enabled,
   });
 };
