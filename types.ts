@@ -31,11 +31,21 @@ export interface Comment {
 export interface CreditCard {
   id: string;
   name: string;
-  last4Digits: string;
+  bankName: string;
+  brand: string;
+  level: string;
+  lastFourDigits: string;
+  holderName?: string;
+  expirationMonth?: string;
+  expirationYear?: string;
   limit: number;
   closingDay: number;
   dueDay: number;
-  color: string;
+  color?: string;
+  status?: 'ACTIVE' | 'BLOCKED' | 'CANCELLED';
+  isDefault?: boolean;
+  isActive?: boolean;
+  tenantId?: string;
 }
 
 export interface Tag {

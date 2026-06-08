@@ -7,31 +7,145 @@ datasource db {
   url      = "file:./dev.db"
 }
 
-model UserProfile {
-  id                   String  @id @default(uuid())
-  name                 String
-  email                String  @unique
-  avatarUrl            String
-  passwordHash         String?
-  twoFactorEnabled     Boolean @default(false)
-  highValueThreshold   Float?  @default(5000)
-  darkMode             Boolean?
-  autoBackupEnabled    Boolean @default(false)
-  dashboardLayout      String?
+// ============================================
+// SaaS Core / Multi-tenant / RBAC
+// ============================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  roles       Role[]
+  cards       CreditCard[]
+  transactions Transaction[]
+  budgets     Budget[]
+  recurring   RecurringRule[]
+  auditLogs   AuditLog[]
 }
 
-model CreditCard {
+model User {
+  id                   String   @id @default(uuid())
+  name                 String
+  email                String   @unique
+  passwordHash         String
+  avatarUrl            String?
+  twoFactorEnabled     Boolean  @default(false)
+  darkMode             Boolean  @default(false)
+  dashboardLayout      String?
+  autoBackupEnabled    Boolean  @default(false)
+  highValueThreshold   Float    @default(5000)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  
+  memberships          Membership[]
+  auditLogs            AuditLog[]
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+}
+
+model Role {
   id          String   @id @default(uuid())
-  name        String
-  last4Digits String
-  limit       Float
-  closingDay  Int
-  dueDay      Int
-  color       String
+  tenantId    String?  // If null, it's a global system role
+  name        String   // SUPERADMIN, ADMIN, USER
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships  Membership[]
+  permissions  RolePermission[]
+
+  @@unique([name, tenantId])
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g., 'dashboard.view', 'transactions.create'
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String?  // JSON
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// ============================================
+// Financial Entities
+// ============================================
+
+model CreditCard {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String   // Naming/nickname (e.g. "Nubank Ultravioleta")
+  bankName        String   // Nubank, Inter, Itaú, etc.
+  brand           String   // VISA, MASTERCARD, ELO, AMEX, etc.
+  level           String   // STANDARD, GOLD, PLATINUM, BLACK, etc.
+  lastFourDigits  String
+  status          String   @default("ACTIVE") // ACTIVE, BLOCKED, CANCELLED
+  holderName      String?
+  expirationMonth String?
+  expirationYear  String?
+  limit           Float
+  closingDay      Int
+  dueDay          Int
+  color           String?  // Optional visual customization
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([tenantId, bankName, brand, lastFourDigits])
 }
 
 model Transaction {
   id                String   @id @default(uuid())
+  tenantId          String
   description       String
   amount            Float
   currency          String   @default("BRL")
@@ -43,32 +157,62 @@ model Transaction {
   status            String   // "PAID" | "PENDING"
   cardId            String?
   category          String
-  tags              String   // Store as JSON string or comma-separated. Using JSON string for simplicity.
+  tags              String?  // JSON
   isInstallment     Boolean  @default(false)
   installmentId     String?
   installmentNumber Int?
   totalInstallments Int?
-  isRecurring       Boolean  @default(false)
-  recurrenceFreq    String?
-  recurrenceEndDate DateTime?
   isPinned          Boolean  @default(false)
-  
-  comments          Comment[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  recurringRuleId   String?
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  card          CreditCard?    @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  recurringRule RecurringRule? @relation(fields: [recurringRuleId], references: [id], onDelete: SetNull)
+  comments      Comment[]
 }
 
 model Comment {
-  id            String      @id @default(uuid())
+  id            String   @id @default(uuid())
   text          String
-  author        String
-  timestamp     DateTime    @default(now())
+  authorId      String   // Can point to User.id
+  authorName    String
+  timestamp     DateTime @default(now())
   transactionId String
+
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 }
 
 model Budget {
-  id       String  @id @default(uuid())
-  category String
-  amount   Float
-  tags     String? // Comma-separated or JSON
-  period   String  @default("MONTHLY")
+  id        String   @id @default(uuid())
+  tenantId  String
+  category  String
+  amount    Float
+  tags      String?  // JSON
+  period    String   @default("MONTHLY") // MONTHLY, QUARTERLY, YEARLY
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model RecurringRule {
+  id            String   @id @default(uuid())
+  tenantId      String
+  description   String
+  amount        Float
+  type          String   // "EXPENSE" | "INCOME"
+  category      String
+  cardId        String?
+  frequency     String   // WEEKLY, MONTHLY, YEARLY
+  nextDate      DateTime
+  endDate       DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
 }

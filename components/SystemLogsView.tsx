@@ -21,7 +21,7 @@ export const SystemLogsView: React.FC = () => {
           {logs.map(log => (
             <li key={log.id} className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                <div className="flex items-center gap-3">
-                 <span className={`px-2 py-1 text-xs font-bold rounded ${log.status >= 400 || log.status === 'Error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                 <span className={`px-2 py-1 text-xs font-bold rounded ${Number(log.status) >= 400 || log.status === 'Error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                     {log.status}
                  </span>
                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { getUserProfile, updateUserProfile, hashPassword, generateBackup } from '../services/userService';
+import { getUserProfile, updateUserProfile } from '../services/userService';
 import { User, Mail, Link as LinkIcon, Save, CheckCircle, Download, Shield, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export const UserManagementView: React.FC = () => {
@@ -47,22 +47,16 @@ export const UserManagementView: React.FC = () => {
       return;
     }
 
-    const savedProfile = await getUserProfile();
-    // Use fallback hash for "123456" if not present
-    const expectedHash = savedProfile.passwordHash || '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92'; 
-    const currentHash = hashPassword(currentPassword);
-
-    if (currentHash !== expectedHash) {
-      setPasswordError('Current password is incorrect.');
-      return;
+    try {
+      await updateUserProfile({ ...profile, currentPassword }, newPassword);
+      setPasswordSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } catch (e: any) {
+      setPasswordError(e.message || 'Failed to update password');
     }
-
-    await updateUserProfile(profile, newPassword);
-    setPasswordSuccess(true);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setTimeout(() => setPasswordSuccess(false), 3000);
   };
 
   const toggle2FA = () => {
@@ -79,7 +73,7 @@ export const UserManagementView: React.FC = () => {
           <p className="text-sm text-slate-500">Manage your personal information and preferences.</p>
         </div>
         <button 
-          onClick={generateBackup}
+          onClick={() => { window.open('/api/backup/export', '_blank'); }}
           className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
         >
           <Download size={18} />

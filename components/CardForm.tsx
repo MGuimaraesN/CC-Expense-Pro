@@ -1,277 +1,262 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { X, CreditCard, Wifi, CircuitBoard, Smartphone } from 'lucide-react';
-import { useCreateCard, useUpdateCard } from '../hooks/useTransactions';
-import { CreditCard as CreditCardType } from '../types';
-
-interface CardFormProps {
-  onClose: () => void;
-  onSuccess: () => void;
-  initialData?: CreditCardType | null;
-}
+import { z } from 'zod';
+import { X, Save, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { CreditCardPreview } from './CreditCardPreview';
 
 const cardSchema = z.object({
-  name: z.string().min(3, "Card name is required"),
-  last4Digits: z.string().length(4, "Must be exactly 4 digits").regex(/^\d+$/, "Must be numbers"),
-  limit: z.number().min(1, "Limit must be greater than 0"),
-  closingDay: z.number().min(1).max(31),
-  dueDay: z.number().min(1).max(31),
+  name: z.string().min(1, 'Nome obrigatório'),
+  bankName: z.string().min(1, 'Banco obrigatório'),
+  brand: z.string().min(1, 'Bandeira obrigatória'),
+  level: z.string().min(1, 'Nível obrigatório'),
+  lastFourDigits: z.string().length(4, 'Deve conter exatos 4 dígitos').regex(/^\d+$/, 'Apenas números'),
+  holderName: z.string().optional(),
+  expirationMonth: z.string().optional(),
+  expirationYear: z.string().optional(),
+  limit: z.number().min(0, 'Limite não pode ser negativo'),
+  closingDay: z.number().min(1).max(31, 'Dia Inválido'),
+  dueDay: z.number().min(1).max(31, 'Dia Inválido'),
+  color: z.string().optional(),
+  isActive: z.boolean().optional(),
+  isDefault: z.boolean().optional()
 });
 
-type CardFormData = z.infer<typeof cardSchema>;
+type CardFormValues = z.infer<typeof cardSchema>;
 
-const CARD_THEMES = [
-  { id: 'slate', class: 'bg-slate-900', label: 'Obsidian' },
-  { id: 'purple', class: 'bg-purple-600', label: 'Royal' },
-  { id: 'indigo', class: 'bg-indigo-600', label: 'Deep Blue' },
-  { id: 'blue', class: 'bg-blue-500', label: 'Azure' },
-  { id: 'emerald', class: 'bg-emerald-600', label: 'Forest' },
-  { id: 'rose', class: 'bg-rose-600', label: 'Ruby' },
-  { id: 'orange', class: 'bg-orange-500', label: 'Sunset' },
-];
+export const CardForm: React.FC<{ onClose: () => void, onSuccess: () => void, initialData?: any }> = ({ onClose, onSuccess, initialData }) => {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [previewValues, setPreviewValues] = useState<any>(initialData || {
+      name: '', bankName: '', brand: 'MASTERCARD', level: 'STANDARD', lastFourDigits: '', holderName: '', expirationMonth: '', expirationYear: '', color: ''
+  });
 
-export const CardForm: React.FC<CardFormProps> = ({ onClose, onSuccess, initialData }) => {
-  const [selectedColor, setSelectedColor] = useState(CARD_THEMES[0].class);
-  const isEditing = !!initialData;
-  
-  const { register, handleSubmit, watch, formState: { errors }, reset } = useForm<CardFormData>({
+  const { register, handleSubmit, watch, formState: { errors, isValid, isSubmitting } } = useForm<CardFormValues>({
     resolver: zodResolver(cardSchema),
-    defaultValues: {
-      name: '',
-      last4Digits: '',
-      limit: undefined,
-      closingDay: undefined,
-      dueDay: undefined
-    }
-  });
-
-  useEffect(() => {
-    if (initialData) {
-      reset({
-        name: initialData.name,
-        last4Digits: initialData.last4Digits,
-        limit: initialData.limit,
-        closingDay: initialData.closingDay,
-        dueDay: initialData.dueDay
-      });
-      setSelectedColor(initialData.color);
-    }
-  }, [initialData, reset]);
-
-  const createCardMutation = useCreateCard({
-    onSuccess: () => {
-      onSuccess();
-      onClose();
-    }
-  });
-
-  const updateCardMutation = useUpdateCard({
-    onSuccess: () => {
-      onSuccess();
-      onClose();
-    }
-  });
-
-  const onSubmit = (data: CardFormData) => {
-    if (isEditing && initialData) {
-      updateCardMutation.mutate({
+    defaultValues: initialData ? {
         ...initialData,
-        ...data,
-        color: selectedColor
+        expirationMonth: initialData.expirationMonth || '',
+        expirationYear: initialData.expirationYear || '',
+        isActive: initialData.isActive ?? true,
+        isDefault: initialData.isDefault ?? false,
+    } : {
+        brand: 'MASTERCARD',
+        level: 'STANDARD',
+        isActive: true,
+        isDefault: false
+    },
+    mode: 'onChange'
+  });
+
+  // Watch for preview changes
+  useEffect(() => {
+     const subscription = watch((value) => setPreviewValues(value));
+     return () => subscription.unsubscribe();
+  }, [watch]);
+
+  const onSubmit = async (data: CardFormValues) => {
+    try {
+      const { apiClient } = await import('../services/apiClient');
+      const url = initialData ? `/cards/${initialData.id}` : '/cards';
+      const method = initialData ? 'PUT' : 'POST';
+      
+      await apiClient(url, {
+         method,
+         body: JSON.stringify(data)
       });
-    } else {
-      createCardMutation.mutate({
-        ...data,
-        color: selectedColor
-      });
+      toast.success(`Cartão ${initialData ? 'atualizado' : 'cadastrado'} com sucesso`);
+      onSuccess();
+      onClose();
+    } catch(e: any) {
+      toast.error(e.message || 'Erro ao salvar cartão');
     }
   };
 
-  // Watch values for Live Preview
-  const watchedName = watch('name') || 'Your Name';
-  const watchedDigits = watch('last4Digits') || '1234';
-  const watchedLimit = watch('limit') || 0;
-  const watchedClosing = watch('closingDay') || 1;
-  const watchedDue = watch('dueDay') || 10;
+  const handleDelete = async () => {
+     if(!confirm('Tem certeza que deseja excluir? Se houver transações vinculadas, o cartão será apenas desativado.')) return;
+     try {
+       setIsDeleting(true);
+       const { apiClient } = await import('../services/apiClient');
+       await apiClient(`/cards/${initialData.id}`, { method: 'DELETE' });
+       toast.success('Cartão excluído com sucesso');
+       onSuccess();
+       onClose();
+     } catch(e: any) {
+       toast.error(e.message || 'Erro ao deletar');
+     } finally {
+       setIsDeleting(false);
+     }
+  };
 
-  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  const isLoading = createCardMutation.isPending || updateCardMutation.isPending;
+  let validity = undefined;
+  if (previewValues.expirationMonth && previewValues.expirationYear) {
+      let m = previewValues.expirationMonth.toString();
+      if(m.length === 1) m = `0${m}`;
+      let y = previewValues.expirationYear.toString();
+      if(y.length > 2) y = y.slice(-2);
+      validity = `${m}/${y}`;
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]">
-        
-        {/* Left Column: Live Preview */}
-        <div className="w-full md:w-5/12 bg-slate-50 dark:bg-slate-950 p-8 md:p-12 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 relative">
-          <div className="text-center mb-8 z-10">
-            <h3 className="text-lg font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Live Preview</h3>
-            <p className="text-sm text-slate-400">See how your card looks in real-time</p>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto pt-20 pb-20">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl max-w-4xl w-full flex flex-col md:flex-row overflow-hidden max-h-full">
+         
+         {/* Live Preview Side */}
+         <div className="bg-slate-50 dark:bg-slate-800 p-8 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-700 w-full md:w-2/5">
+            <h3 className="text-sm font-semibold uppercase tracking-widest text-slate-400 mb-8 w-full text-center">Live Preview</h3>
+            <CreditCardPreview 
+               name={previewValues.name}
+               bankName={previewValues.bankName}
+               brand={previewValues.brand}
+               level={previewValues.level}
+               lastFourDigits={previewValues.lastFourDigits}
+               holderName={previewValues.holderName}
+               validity={validity}
+               color={previewValues.color}
+               size="md"
+            />
+         </div>
 
-          {/* Realistic Card Component */}
-          <div className={`relative w-full aspect-[1.586/1] rounded-2xl p-6 text-white shadow-2xl transition-all duration-500 transform hover:scale-105 ${selectedColor}`}>
-            {/* Glossy Overlay/Effects */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-2xl pointer-events-none" />
-            <div className="absolute -right-12 -top-12 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-black/20 rounded-full blur-3xl" />
-
-            <div className="relative z-10 flex flex-col h-full justify-between">
-              {/* Card Top */}
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                   <div className="w-10 h-8 bg-yellow-400/80 rounded-md relative overflow-hidden flex items-center justify-center shadow-inner">
-                      <CircuitBoard className="text-yellow-600/50 w-full h-full opacity-50" />
-                   </div>
-                   <Wifi className="rotate-90 opacity-80" size={20} />
-                </div>
-                {/* Removed VISA text */}
-              </div>
-
-              {/* Card Number */}
-              <div className="mt-4">
-                <div className="flex items-center gap-3 text-xl md:text-2xl font-mono tracking-widest opacity-90 drop-shadow-md">
-                  <span>••••</span>
-                  <span>••••</span>
-                  <span>••••</span>
-                  <span>{watchedDigits.padEnd(4, '•').substring(0, 4)}</span>
-                </div>
-              </div>
-
-              {/* Card Details (Bottom) */}
-              <div className="flex justify-between items-end mt-auto">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase opacity-60 tracking-wider font-semibold">Card Holder</p>
-                  <p className="font-medium tracking-wide uppercase truncate max-w-[140px]">{watchedName}</p>
-                </div>
-                <div className="text-right space-y-1">
-                   <p className="text-[10px] uppercase opacity-60 tracking-wider font-semibold">Limit</p>
-                   <p className="font-semibold">{formatCurrency(watchedLimit)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Info Badge */}
-          <div className="mt-12 flex gap-6 text-xs text-slate-400">
-             <div className="flex flex-col items-center gap-1">
-                <span className="font-semibold text-slate-900 dark:text-white">{watchedClosing}th</span>
-                <span>Closing Day</span>
-             </div>
-             <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
-             <div className="flex flex-col items-center gap-1">
-                <span className="font-semibold text-slate-900 dark:text-white">{watchedDue}th</span>
-                <span>Due Day</span>
-             </div>
-          </div>
-
-        </div>
-
-        {/* Right Column: Form */}
-        <div className="w-full md:w-7/12 flex flex-col h-full bg-white dark:bg-slate-900">
-           <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                {isEditing ? 'Edit Card Details' : 'Add New Card'}
-              </h2>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                <X size={24} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit(onSubmit)} className="p-6 md:p-8 space-y-6 overflow-y-auto flex-1">
-              
-              {/* Theme Selector */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Card Style</label>
-                <div className="flex flex-wrap gap-3">
-                  {CARD_THEMES.map((theme) => (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      onClick={() => setSelectedColor(theme.class)}
-                      className={`w-10 h-10 rounded-full cursor-pointer transition-all duration-200 ring-2 ring-offset-2 dark:ring-offset-slate-900 ${theme.class} ${selectedColor === theme.class ? 'ring-indigo-500 scale-110 shadow-lg' : 'ring-transparent hover:scale-105'}`}
-                      title={theme.label}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Name Field */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Card Name</label>
-                <input 
-                  type="text" 
-                  {...register('name')}
-                  className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white transition-all ${errors.name ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                  placeholder="e.g. Nubank Platinum"
-                />
-                {errors.name && <span className="text-red-500 text-xs mt-1 block">{errors.name.message}</span>}
-              </div>
-
-              {/* Digits & Limit Row */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Last 4 Digits</label>
-                  <div className="relative">
-                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                     <input 
-                      type="text" 
-                      maxLength={4}
-                      {...register('last4Digits')}
-                      className={`w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white font-mono ${errors.last4Digits ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                      placeholder="8842"
-                    />
-                  </div>
-                  {errors.last4Digits && <span className="text-red-500 text-xs mt-1 block">{errors.last4Digits.message}</span>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Total Limit</label>
-                  <input 
-                    type="number" 
-                    {...register('limit', { valueAsNumber: true })}
-                    className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white ${errors.limit ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                    placeholder="15000"
-                  />
-                  {errors.limit && <span className="text-red-500 text-xs mt-1 block">{errors.limit.message}</span>}
-                </div>
-              </div>
-
-              {/* Days Row */}
-              <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Closing Day</label>
-                   <input 
-                      type="number" 
-                      {...register('closingDay', { valueAsNumber: true })}
-                      className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white ${errors.closingDay ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                      placeholder="Day (1-31)"
-                   />
-                   {errors.closingDay && <span className="text-red-500 text-xs mt-1 block">{errors.closingDay.message}</span>}
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Due Day</label>
-                   <input 
-                      type="number" 
-                      {...register('dueDay', { valueAsNumber: true })}
-                      className={`w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white ${errors.dueDay ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                      placeholder="Day (1-31)"
-                   />
-                   {errors.dueDay && <span className="text-red-500 text-xs mt-1 block">{errors.dueDay.message}</span>}
-                 </div>
-              </div>
-
-              <div className="pt-6 mt-auto">
-                <button 
-                  type="submit" 
-                  disabled={isLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {isLoading ? 'Processing...' : (isEditing ? 'Save Changes' : 'Save Card')}
+         {/* Form Side */}
+         <div className="p-6 md:p-8 w-full md:w-3/5 overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {initialData ? 'Editar Cartão' : 'Novo Cartão'}
+                </h2>
+                <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg dark:hover:text-slate-300">
+                    <X size={20} />
                 </button>
-              </div>
+            </div>
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+               {/* 1. Nome e Banco */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Apelido do Cartão *</label>
+                    <input {...register('name')} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" placeholder="ex: Nubank Pessoal" />
+                    {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Banco Emissor *</label>
+                    <input {...register('bankName')} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" placeholder="ex: Nubank, Itaú..." />
+                    {errors.bankName && <p className="text-red-500 text-xs mt-1">{errors.bankName.message}</p>}
+                  </div>
+               </div>
+
+               {/* 2. Brand e Level */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bandeira *</label>
+                    <select {...register('brand')} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                        <option value="MASTERCARD">Mastercard</option>
+                        <option value="VISA">Visa</option>
+                        <option value="ELO">Elo</option>
+                        <option value="AMEX">American Express</option>
+                        <option value="HIPERCARD">Hipercard</option>
+                        <option value="DINERS">Diners Club</option>
+                        <option value="DISCOVER">Discover</option>
+                        <option value="AURA">Aura</option>
+                        <option value="OTHER">Outro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nível *</label>
+                    <select {...register('level')} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white">
+                        <option value="STANDARD">Standard</option>
+                        <option value="GOLD">Gold</option>
+                        <option value="PLATINUM">Platinum</option>
+                        <option value="BLACK">Black</option>
+                        <option value="INFINITE">Infinite</option>
+                        <option value="SIGNATURE">Signature</option>
+                        <option value="NANQUIM">Nanquim</option>
+                        <option value="GRAPHITE">Graphite</option>
+                        <option value="UNIQUE">Unique</option>
+                        <option value="OTHER">Outro</option>
+                    </select>
+                  </div>
+               </div>
+
+               {/* 3. Numbers and Names */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Final 4 Dígitos *</label>
+                    <input {...register('lastFourDigits')} maxLength={4} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white font-mono" placeholder="1234" />
+                    {errors.lastFourDigits && <p className="text-red-500 text-xs mt-1">{errors.lastFourDigits.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome no Cartão</label>
+                    <input {...register('holderName')} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white uppercase" placeholder="JOAO S SILVA" />
+                  </div>
+               </div>
+
+               {/* 4. Validade e Cor */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Validade (MM/AÑO)</label>
+                    <div className="flex gap-2">
+                       <input {...register('expirationMonth')} maxLength={2} placeholder="MM" className="w-1/2 px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white text-center" />
+                       <input {...register('expirationYear')} maxLength={4} placeholder="YYYY" className="w-1/2 px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white text-center" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tema Personalizado (opcional)</label>
+                    <input {...register('color')} placeholder="ex: bg-red-500" className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+                  </div>
+               </div>
+
+               {/* 5. Valores financeiros */}
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Limite Total *</label>
+                    <input type="number" step="0.01" {...register('limit', { valueAsNumber: true })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+                    {errors.limit && <p className="text-red-500 text-xs mt-1">{errors.limit.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fechamento *</label>
+                    <input type="number" {...register('closingDay', { valueAsNumber: true })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+                    {errors.closingDay && <p className="text-red-500 text-xs mt-1">{errors.closingDay.message}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vencimento *</label>
+                    <input type="number" {...register('dueDay', { valueAsNumber: true })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+                    {errors.dueDay && <p className="text-red-500 text-xs mt-1">{errors.dueDay.message}</p>}
+                  </div>
+               </div>
+
+               {/* 6. Status Options */}
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                 <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <input type="checkbox" {...register('isActive')} className="w-4 h-4 text-indigo-600 rounded" />
+                    <div className="flex flex-col">
+                       <span className="text-sm font-medium dark:text-white">Cartão Ativo</span>
+                       <span className="text-xs text-slate-500">Pode ser usado em novas transações</span>
+                    </div>
+                 </label>
+                 <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <input type="checkbox" {...register('isDefault')} className="w-4 h-4 text-indigo-600 rounded" />
+                    <div className="flex flex-col">
+                       <span className="text-sm font-medium dark:text-white">Tornar Padrão</span>
+                       <span className="text-xs text-slate-500">Será pré-selecionado por padrão</span>
+                    </div>
+                 </label>
+               </div>
+
+               <div className="border-t dark:border-slate-700 pt-6 mt-6 flex justify-between">
+                  {initialData ? (
+                     <button type="button" onClick={handleDelete} disabled={isDeleting} className="text-red-600 hover:bg-red-50 flex items-center gap-2 px-4 py-2 font-medium rounded-lg transition-colors dark:hover:bg-red-900/20">
+                       <Trash2 size={18} /> {isDeleting ? 'Excluindo...' : 'Excluir'}
+                     </button>
+                  ) : <div />}
+
+                  <div className="flex gap-4">
+                     <button type="button" onClick={onClose} className="px-4 py-2 text-slate-700 hover:bg-slate-100 font-medium rounded-lg transition-colors dark:text-slate-300 dark:hover:bg-slate-800">Cancelar</button>
+                     <button type="submit" disabled={isSubmitting || !isValid} className="px-6 py-2 bg-indigo-600 font-medium text-white rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                       <Save size={18} /> Salvar Cartão
+                     </button>
+                  </div>
+               </div>
             </form>
-        </div>
+         </div>
       </div>
     </div>
   );

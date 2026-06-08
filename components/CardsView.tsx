@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
-import { CreditCard } from '../types';
-import { Skeleton } from './ui/Skeleton';
-import { Plus, Wifi, Edit2, ThumbsUp } from 'lucide-react';
+import { CreditCardPreview } from './CreditCardPreview';
 import { CardForm } from './CardForm';
+import { Skeleton } from './ui/Skeleton';
+import { Plus, Edit2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface CardsViewProps {
-  cards: CreditCard[];
+  cards: any[];
   loading: boolean;
   onSuccess?: () => void;
 }
 
 export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess }) => {
   const [showCardModal, setShowCardModal] = useState(false);
-  const [editingCard, setEditingCard] = useState<CreditCard | null>(null);
+  const [editingCard, setEditingCard] = useState<any | null>(null);
 
-  const handleEdit = (card: CreditCard) => {
+  const handleEdit = (card: any) => {
     setEditingCard(card);
     setShowCardModal(true);
   };
@@ -24,11 +25,7 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess 
     setEditingCard(null);
   };
 
-  const isBestDayToBuy = (closingDay: number) => {
-    const today = new Date().getDate();
-    // Simple logic: If today is closing day, it's the best day (next invoice is far)
-    return today === closingDay;
-  };
+  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   if (loading) {
     return (
@@ -40,112 +37,97 @@ export const CardsView: React.FC<CardsViewProps> = ({ cards, loading, onSuccess 
     );
   }
 
-  const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-end">
-        <button 
+      <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+         <div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+               <ShieldCheck size={20} className="text-indigo-500" /> Secure Cards
+            </h2>
+            <p className="text-xs text-slate-500">Manage your credit cards securely. We do not store sensitive data like full numbers or CVV.</p>
+         </div>
+         <button 
           onClick={() => setShowCardModal(true)}
-          className="text-sm font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
         >
-          <Plus size={16} /> Add New Card
+          <Plus size={16} /> Novo Cartão
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {cards.map((card) => (
-          <div 
-            key={card.id} 
-            className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-xl transition-transform hover:-translate-y-1 group ${card.color || 'bg-slate-800'}`}
-          >
-            {/* Best Buy Day Badge */}
-            {isBestDayToBuy(card.closingDay) && (
-              <div className="absolute top-0 left-0 bg-emerald-500 text-white text-[10px] font-bold px-3 py-1 rounded-br-lg shadow-lg z-20 flex items-center gap-1">
-                 <ThumbsUp size={10} /> BEST DAY TO BUY
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {cards.map((card) => {
+           let validity = undefined;
+           if (card.expirationMonth && card.expirationYear) {
+               validity = `${card.expirationMonth.toString().padStart(2, '0')}/${card.expirationYear.toString().slice(-2)}`;
+           }
+           const utilizedPct = card.usagePercentage || 0;
+           return (
+              <div key={card.id} className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col md:flex-row gap-6 relative group transform transition">
+                  <div className="absolute top-4 right-4 z-20">
+                    <button onClick={() => handleEdit(card)} className="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                       <Edit2 size={18} />
+                    </button>
+                  </div>
+                  
+                  <div className="shrink-0 flex items-center justify-center">
+                    <CreditCardPreview 
+                      name={card.name}
+                      bankName={card.bankName}
+                      brand={card.brand}
+                      level={card.level}
+                      lastFourDigits={card.lastFourDigits}
+                      holderName={card.holderName}
+                      validity={validity}
+                      color={card.color}
+                      size="sm"
+                    />
+                  </div>
+                  
+                  <div className="flex-1 flex flex-col justify-center space-y-4">
+                     <div>
+                       <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate max-w-[200px] md:max-w-xs">{card.name}</h3>
+                       <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${card.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>{card.isActive ? 'Ativo' : 'Inativo'}</span>
+                          {card.isDefault && <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">Padrão</span>}
+                       </div>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <p className="text-xs text-slate-500 mb-0.5">Fechamento</p>
+                           <p className="font-semibold text-slate-900 dark:text-white text-sm">Dia {card.closingDay}</p>
+                        </div>
+                        <div>
+                           <p className="text-xs text-slate-500 mb-0.5">Vencimento</p>
+                           <p className="font-semibold text-slate-900 dark:text-white text-sm">Dia {card.dueDay}</p>
+                        </div>
+                     </div>
+
+                     <div>
+                        <div className="flex justify-between text-sm mb-1.5 font-medium">
+                           <span className="text-slate-500">Limite Usado</span>
+                           <span className={utilizedPct > 80 ? 'text-red-500' : 'text-slate-900 dark:text-white'}>{formatCurrency(card.usedLimit)} / {formatCurrency(card.limit)}</span>
+                        </div>
+                        <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+                           <div 
+                              className={`h-2 rounded-full ${utilizedPct > 80 ? 'bg-red-500' : 'bg-indigo-600'}`} 
+                              style={{ width: `${Math.min(utilizedPct, 100)}%` }}
+                           ></div>
+                        </div>
+                        <div className="flex justify-between text-xs mt-1.5 text-slate-500 font-medium">
+                           <span>{utilizedPct.toFixed(1)}% utilizado</span>
+                           <span>{formatCurrency(card.availableLimit)} dsps.</span>
+                        </div>
+                        {utilizedPct > 80 && (
+                           <div className="mt-2 text-xs text-red-600 dark:text-red-400 flex items-center gap-1 bg-red-50 dark:bg-red-900/10 p-1.5 rounded">
+                              <AlertTriangle size={12} /> Limite próximo do total. Cuidado ao comprar.
+                           </div>
+                        )}
+                     </div>
+                  </div>
               </div>
-            )}
-
-            {/* Background Decor */}
-            <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl" />
-            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-black opacity-10 rounded-full blur-2xl" />
-
-            {/* Edit Overlay Button */}
-            <div className="absolute top-4 right-4 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-               <button 
-                 onClick={() => handleEdit(card)}
-                 className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-white backdrop-blur-sm transition-colors"
-                 title="Edit Card"
-               >
-                 <Edit2 size={16} />
-               </button>
-            </div>
-
-            <div className="relative z-10 flex flex-col h-48 justify-between pointer-events-none">
-              <div className="flex justify-between items-start mt-4">
-                <div>
-                  <h3 className="font-bold text-lg tracking-wide">{card.name}</h3>
-                  <p className="text-xs opacity-75">Credit Card</p>
-                </div>
-                <Wifi size={24} className="opacity-75" />
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-4 text-lg tracking-widest font-mono opacity-90">
-                  <span>••••</span>
-                  <span>••••</span>
-                  <span>••••</span>
-                  <span>{card.last4Digits}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-end">
-                <div>
-                  <p className="text-xs opacity-75 mb-1">Total Limit</p>
-                  <p className="font-semibold">{formatCurrency(card.limit)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs opacity-75 mb-1">Closing Day</p>
-                  <p className="font-semibold">{card.closingDay}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {/* Add Card Placeholder */}
-        <button 
-          onClick={() => setShowCardModal(true)}
-          className="h-full min-h-[14rem] rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors bg-slate-50/50 dark:bg-slate-900/50"
-        >
-          <Plus size={32} className="mb-2" />
-          <span className="font-medium">Link new card</span>
-        </button>
-      </div>
-
-      {/* Card Details / Analysis Section */}
-      <div className="mt-10 bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Limit Utilization</h3>
-        <div className="space-y-4">
-          {cards.map(card => {
-             // Mock utilization for visualization
-             const randomUtil = Math.floor(Math.random() * 80) + 10;
-             return (
-               <div key={card.id}>
-                 <div className="flex justify-between text-sm mb-1">
-                   <span className="text-slate-700 dark:text-slate-300">{card.name}</span>
-                   <span className="text-slate-500">{randomUtil}%</span>
-                 </div>
-                 <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5">
-                   <div 
-                      className={`h-2.5 rounded-full ${randomUtil > 75 ? 'bg-red-500' : 'bg-indigo-600'}`} 
-                      style={{ width: `${randomUtil}%` }}
-                    ></div>
-                 </div>
-               </div>
-             )
-          })}
-        </div>
+           );
+        })}
       </div>
 
       {showCardModal && (

@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Moon, Shield, Globe, Monitor, Database, Download, Upload, AlertTriangle, Cpu, RefreshCw, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
-import { generateBackup, restoreBackup, getUserProfile, updateUserProfile } from '../services/userService';
+import { getUserProfile, updateUserProfile } from '../services/userService';
 import { toast } from 'sonner';
 
 interface SettingsViewProps {
@@ -78,13 +78,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ darkMode, setDarkMod
       reader.onload = (event) => {
         const content = event.target?.result as string;
         try {
-          const success = restoreBackup(content);
-          if (success) {
-            resolve('Data restored!');
-            setTimeout(() => window.location.reload(), 1500);
-          } else {
-            reject(new Error('Invalid backup file structure'));
-          }
+          toast.error("Restore is not supported in this version.")
+          reject(new Error("Not Supported"));
         } catch (err) {
           reject(err);
         }

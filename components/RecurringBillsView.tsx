@@ -16,14 +16,14 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
 
   const startEditing = (t: Transaction) => {
     setEditingId(t.id);
-    setEditFreq(t.recurrenceFreq || 'MONTHLY');
+    setEditFreq(t.recurrenceFrequency || 'MONTHLY');
     setEditDate(new Date(t.date).toISOString().split('T')[0]);
   };
 
   const saveEdit = async (t: Transaction) => {
     try {
       await onUpdate(t.id, { 
-        recurrenceFreq: editFreq, 
+        recurrenceFrequency: editFreq as any, 
         date: new Date(editDate).toISOString() 
       });
       setEditingId(null);
@@ -49,8 +49,8 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
     try {
       // Shift date by recurrence frequency
       const nextDate = new Date(t.date);
-      if (t.recurrenceFreq === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
-      else if (t.recurrenceFreq === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
+      if (t.recurrenceFrequency === 'YEARLY') nextDate.setFullYear(nextDate.getFullYear() + 1);
+      else if (t.recurrenceFrequency === 'WEEKLY') nextDate.setDate(nextDate.getDate() + 7);
       else nextDate.setMonth(nextDate.getMonth() + 1); // default Monthly
 
       await onUpdate(t.id, { date: nextDate.toISOString() });
@@ -88,7 +88,7 @@ export const RecurringBillsView: React.FC<RecurringBillsViewProps> = ({ transact
                  </span>
               </div>
               <div className="flex items-center gap-3 text-sm text-slate-500">
-                <span className="flex items-center gap-1 font-medium"><Repeat size={14} /> {t.recurrenceFreq?.toUpperCase() || 'MONTHLY'}</span>
+                <span className="flex items-center gap-1 font-medium"><Repeat size={14} /> {t.recurrenceFrequency?.toUpperCase() || 'MONTHLY'}</span>
                 <span className="flex items-center gap-1 text-slate-400"><Clock size={14} /> Next: {new Date(t.date).toLocaleDateString()}</span>
                 <strong className="text-slate-900 dark:text-white">R$ {t.amount}</strong>
               </div>

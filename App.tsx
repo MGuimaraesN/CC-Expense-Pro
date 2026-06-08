@@ -15,6 +15,7 @@ import { UserManagementView } from './components/UserManagementView';
 import { MonthlyReportsView } from './components/MonthlyReportsView';
 import { SystemLogsView } from './components/SystemLogsView';
 import { RecurringBillsView } from './components/RecurringBillsView';
+import { PermissionGuard } from './components/PermissionGuard';
 import { useTransactions, useCards, useDashboardStats, useCreateTransaction, useDeleteTransaction } from './hooks/useTransactions';
 import { isAuthenticated, logout, getUserProfile, updateUserProfile } from './services/userService';
 import { Toaster, toast } from 'sonner';
@@ -87,6 +88,13 @@ const App: React.FC = () => {
        // Simple hash routing protection or state reset
        setCurrentView('dashboard');
     }
+
+    const handleAuthExpired = () => {
+      setIsAuth(false);
+      toast.error('Session expired. Please log in again.');
+    };
+    window.addEventListener('auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('auth-expired', handleAuthExpired);
   }, []);
 
   // Update Profile when view changes (simple sync)
@@ -137,7 +145,9 @@ const App: React.FC = () => {
   // Global Error Handler for Query
   useEffect(() => {
     if (isError && error && isAuth) {
-      toast.error(error.message || 'Failed to fetch data');
+      if (error.message !== 'Unauthorized') {
+        toast.error(error.message || 'Failed to fetch data');
+      }
     }
   }, [isError, error, isAuth]);
 
@@ -355,12 +365,14 @@ const App: React.FC = () => {
             icon={<Upload size={20} />} 
             label="Import Data" 
           />
-          <NavItem 
-            onClick={() => handleNavClick('logs')} 
-            active={currentView === 'logs'} 
-            icon={<Activity size={20} />} 
-            label="System Logs" 
-          />
+          <PermissionGuard requireAdmin>
+            <NavItem 
+              onClick={() => handleNavClick('logs')} 
+              active={currentView === 'logs'} 
+              icon={<Activity size={20} />} 
+              label="System Logs" 
+            />
+          </PermissionGuard>
           <NavItem 
             onClick={() => handleNavClick('settings')} 
             active={currentView === 'settings'} 
